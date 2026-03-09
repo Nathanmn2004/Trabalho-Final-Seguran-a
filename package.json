@@ -1,0 +1,14 @@
+{
+  "name": "bruteforce-login",
+  "version": "1.0.0",
+  "description": "Projeto simples de brute force com mitigação",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "attack": "node attack.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
