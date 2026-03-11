@@ -5,11 +5,11 @@ app.use(express.json());
 
 const PORT = 3000;
 
-// "Banco" simples em memória
+// Banco simples em memória
 const users = [
   {
     username: "admin",
-    password: "1234"
+    password: "AB6k" // senha de 4 caracteres para demonstrar
   }
 ];
 
@@ -34,36 +34,40 @@ function getAttemptData(username) {
 }
 
 function isBlocked(userAttempt) {
-  if (!userAttempt.blockedUntil) return false;
-  return Date.now() < userAttempt.blockedUntil;
+  return !!userAttempt.blockedUntil && Date.now() < userAttempt.blockedUntil;
 }
 
 function getRemainingBlockTime(userAttempt) {
   if (!userAttempt.blockedUntil) return 0;
-  const remaining = userAttempt.blockedUntil - Date.now();
-  return remaining > 0 ? remaining : 0;
+  return Math.max(0, userAttempt.blockedUntil - Date.now());
 }
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Rota para ver status
+// Página inicial
 app.get("/", (req, res) => {
   res.json({
     message: "Servidor de login rodando",
     mode,
-    users: users.map((u) => u.username),
+    demoUser: "admin",
     endpoints: {
       login: "POST /login",
       changeMode: "POST /mode",
+      currentMode: "GET /mode",
       status: "GET /status/:username",
       reset: "POST /reset/:username"
     }
   });
 });
 
-// Trocar modo de execução
+// Ver modo atual
+app.get("/mode", (req, res) => {
+  res.json({ mode });
+});
+
+// Alterar modo
 app.post("/mode", (req, res) => {
   const { newMode } = req.body;
 
@@ -78,11 +82,12 @@ app.post("/mode", (req, res) => {
 
   res.json({
     success: true,
-    message: `Modo alterado para ${mode}`
+    message: `Modo alterado para ${mode}`,
+    mode
   });
 });
 
-// Ver status de um usuário
+// Ver status de tentativas do usuário
 app.get("/status/:username", (req, res) => {
   const username = req.params.username;
   const data = getAttemptData(username);
@@ -96,7 +101,7 @@ app.get("/status/:username", (req, res) => {
   });
 });
 
-// Resetar tentativas de um usuário
+// Resetar tentativas
 app.post("/reset/:username", (req, res) => {
   const username = req.params.username;
   attempts[username] = {
@@ -106,7 +111,7 @@ app.post("/reset/:username", (req, res) => {
 
   res.json({
     success: true,
-    message: `Tentativas do usuário '${username}' foram resetadas.`
+    message: `Tentativas de '${username}' resetadas com sucesso.`
   });
 });
 
@@ -114,32 +119,29 @@ app.post("/reset/:username", (req, res) => {
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
-  if (!username || !password) {
+  if (typeof username !== "string" || typeof password !== "string") {
     return res.status(400).json({
       success: false,
-      message: "Informe username e password."
+      message: "Envie username e password como texto."
     });
   }
 
   const user = users.find((u) => u.username === username);
   const userAttempt = getAttemptData(username);
 
-  // Se estiver em modo protegido, verifica bloqueio
   if (mode === "protected" && isBlocked(userAttempt)) {
     return res.status(429).json({
       success: false,
-      message: "Usuário temporariamente bloqueado por excesso de tentativas.",
+      message: "Usuário temporariamente bloqueado.",
       remainingBlockMs: getRemainingBlockTime(userAttempt)
     });
   }
 
-  // Atraso progressivo no modo protegido
   if (mode === "protected" && userAttempt.failedCount > 0) {
     const delay = userAttempt.failedCount * BASE_DELAY_MS;
     await sleep(delay);
   }
 
-  // Usuário inexistente ou senha errada
   if (!user || user.password !== password) {
     userAttempt.failedCount += 1;
 
@@ -150,7 +152,7 @@ app.post("/login", async (req, res) => {
         success: false,
         message: "Muitas tentativas falhas. Usuário bloqueado temporariamente.",
         failedCount: userAttempt.failedCount,
-        blockedUntil: userAttempt.blockedUntil
+        remainingBlockMs: getRemainingBlockTime(userAttempt)
       });
     }
 
@@ -161,7 +163,7 @@ app.post("/login", async (req, res) => {
     });
   }
 
-  // Login correto: reseta tentativas
+  // Sucesso
   userAttempt.failedCount = 0;
   userAttempt.blockedUntil = null;
 
@@ -174,4 +176,6 @@ app.post("/login", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
   console.log(`Modo inicial: ${mode}`);
+  console.log(`Usuário de teste: admin`);
+  console.log(`Senha de teste: ${users[0].password}`);
 });
