@@ -1,124 +1,109 @@
 const express = require("express");
+const path = require("path");
 
 const app = express();
-app.use(express.json());
+app.use(express.json()); 
+app.use(express.static(path.join(__dirname, "public"))); 
 
 const PORT = 3000;
 
-// Banco simples em memória
-const users = [
-  {
-    username: "admin",
-    password: "AB6k" // senha de 4 caracteres para demonstrar
-  }
-];
+// numero de tentativas e tempo de bloqueio no modo protegido
+const MAX_ATTEMPTS = 5;
+const BLOCK_TIME_MS = 15 * 1000; 
 
-// Controle de tentativas por usuário
+let mode = "protected";
+
+let adminPassword = null;
+
 const attempts = {};
 
-// Configuração do sistema
-let mode = "vulnerable"; // "vulnerable" ou "protected"
-
-const MAX_ATTEMPTS = 5;
-const BLOCK_TIME_MS = 60 * 1000; // 1 minuto
-const BASE_DELAY_MS = 1000; // atraso progressivo: 1s por erro
-
+// Retorna os dados de tentativa de um usuário ou cria se não existir
 function getAttemptData(username) {
   if (!attempts[username]) {
-    attempts[username] = {
-      failedCount: 0,
-      blockedUntil: null
-    };
+    attempts[username] = { failedCount: 0, blockedUntil: null };
   }
   return attempts[username];
 }
 
-function isBlocked(userAttempt) {
-  return !!userAttempt.blockedUntil && Date.now() < userAttempt.blockedUntil;
+// Verifica se o usuário está bloqueado pelo modo protegido
+function isBlocked(ua) {
+  return !!ua.blockedUntil && Date.now() < ua.blockedUntil;
 }
 
-function getRemainingBlockTime(userAttempt) {
-  if (!userAttempt.blockedUntil) return 0;
-  return Math.max(0, userAttempt.blockedUntil - Date.now());
+// Calcula quanto tempo falta para o desbloqueio
+function getRemainingBlockMs(ua) {
+  return ua.blockedUntil ? Math.max(0, ua.blockedUntil - Date.now()) : 0;
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// Página principal 
+app.get("/", (_req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
-// Página inicial
-app.get("/", (req, res) => {
+//  Status do servidor, indica se senha ja foi definida e modo atual
+app.get("/status", (_req, res) => {
   res.json({
-    message: "Servidor de login rodando",
-    mode,
-    demoUser: "admin",
-    endpoints: {
-      login: "POST /login",
-      changeMode: "POST /mode",
-      currentMode: "GET /mode",
-      status: "GET /status/:username",
-      reset: "POST /reset/:username"
-    }
+    passwordSet: adminPassword !== null, 
+    mode
   });
 });
 
-// Ver modo atual
-app.get("/mode", (req, res) => {
-  res.json({ mode });
+// Definir senha do admin 
+app.post("/setup", (req, res) => {
+  const { password } = req.body;
+
+  // validação básica
+  if (typeof password !== "string" || password.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Senha inválida."
+    });
+  }
+
+  adminPassword = password;
+
+  // limpa histórico de tentativas quando a senha muda
+  Object.keys(attempts).forEach((k) => delete attempts[k]);
+
+  console.log(
+    `[SETUP] Senha do admin definida — ${password.length} caractere${password.length !== 1 ? "s" : ""}.`
+  );
+
+  return res.json({
+    success: true,
+    message: "Senha definida."
+  });
 });
 
-// Alterar modo
+// Possibilidade de alterar o modo do sistema (vulnerável ou protegido)
 app.post("/mode", (req, res) => {
   const { newMode } = req.body;
 
   if (!["vulnerable", "protected"].includes(newMode)) {
     return res.status(400).json({
       success: false,
-      message: "Modo inválido. Use 'vulnerable' ou 'protected'."
+      message: "Modo inválido."
     });
   }
 
   mode = newMode;
 
+  // limpa tentativas ao trocar de modo
+  Object.keys(attempts).forEach((k) => delete attempts[k]);
+
+  console.log(`[MODE] Modo alterado para: ${mode}`);
+
   res.json({
     success: true,
-    message: `Modo alterado para ${mode}`,
     mode
   });
 });
 
-// Ver status de tentativas do usuário
-app.get("/status/:username", (req, res) => {
-  const username = req.params.username;
-  const data = getAttemptData(username);
-
-  res.json({
-    username,
-    failedCount: data.failedCount,
-    blocked: isBlocked(data),
-    remainingBlockMs: getRemainingBlockTime(data),
-    mode
-  });
-});
-
-// Resetar tentativas
-app.post("/reset/:username", (req, res) => {
-  const username = req.params.username;
-  attempts[username] = {
-    failedCount: 0,
-    blockedUntil: null
-  };
-
-  res.json({
-    success: true,
-    message: `Tentativas de '${username}' resetadas com sucesso.`
-  });
-});
-
-// Login
-app.post("/login", async (req, res) => {
+// Endpoint de login, recebe usuário e senha e retorna o sucesso ou falha
+app.post("/login", (req, res) => {
   const { username, password } = req.body;
 
+  // valida os dados enviados
   if (typeof username !== "string" || typeof password !== "string") {
     return res.status(400).json({
       success: false,
@@ -126,56 +111,67 @@ app.post("/login", async (req, res) => {
     });
   }
 
-  const user = users.find((u) => u.username === username);
-  const userAttempt = getAttemptData(username);
-
-  if (mode === "protected" && isBlocked(userAttempt)) {
-    return res.status(429).json({
+  // verifica se a senha do admin já foi configurada
+  if (adminPassword === null) {
+    return res.status(503).json({
       success: false,
-      message: "Usuário temporariamente bloqueado.",
-      remainingBlockMs: getRemainingBlockTime(userAttempt)
+      message: "Senha do admin ainda não foi configurada."
     });
   }
 
-  if (mode === "protected" && userAttempt.failedCount > 0) {
-    const delay = userAttempt.failedCount * BASE_DELAY_MS;
-    await sleep(delay);
+  const ua = getAttemptData(username);
+
+  // se estiver em modo protegido, verifica bloqueio
+  if (mode === "protected" && isBlocked(ua)) {
+    return res.status(429).json({
+      success: false,
+      message: "Usuário temporariamente bloqueado.",
+      remainingBlockMs: getRemainingBlockMs(ua)
+    });
   }
 
-  if (!user || user.password !== password) {
-    userAttempt.failedCount += 1;
+  // valida login
+  const valid = username === "admin" && password === adminPassword;
 
-    if (mode === "protected" && userAttempt.failedCount >= MAX_ATTEMPTS) {
-      userAttempt.blockedUntil = Date.now() + BLOCK_TIME_MS;
+  if (!valid) {
+    ua.failedCount++;
+
+    // bloqueia após cinco tentativas no modo protegido
+    if (mode === "protected" && ua.failedCount >= MAX_ATTEMPTS) {
+      ua.blockedUntil = Date.now() + BLOCK_TIME_MS;
 
       return res.status(429).json({
         success: false,
-        message: "Muitas tentativas falhas. Usuário bloqueado temporariamente.",
-        failedCount: userAttempt.failedCount,
-        remainingBlockMs: getRemainingBlockTime(userAttempt)
+        message: "Muitas tentativas. Usuário bloqueado por 15 segundos.",
+        failedCount: ua.failedCount,
+        remainingBlockMs: getRemainingBlockMs(ua)
       });
     }
 
     return res.status(401).json({
       success: false,
       message: "Usuário ou senha inválidos.",
-      failedCount: userAttempt.failedCount
+      failedCount: ua.failedCount
     });
   }
 
-  // Sucesso
-  userAttempt.failedCount = 0;
-  userAttempt.blockedUntil = null;
+  // login bem-sucedido: reset das tentativas
+  ua.failedCount = 0;
+  ua.blockedUntil = null;
 
   return res.json({
     success: true,
-    message: "Login realizado com sucesso."
+    message: "Login realizado com sucesso!"
   });
 });
 
+// inicia o servidor
 app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
-  console.log(`Modo inicial: ${mode}`);
-  console.log(`Usuário de teste: admin`);
-  console.log(`Senha de teste: ${users[0].password}`);
+  console.log("---------------------------------------------");
+  console.log("   SERVIDOR DE AUTENTICAÇÃO - BRUTE FORCE   ");
+  console.log("---------------------------------------------");
+  console.log(`URL:  http://localhost:${PORT}`);
+  console.log(`Modo: ${mode}`);
+  console.log("Aguardando configuração da senha via /setup");
+  console.log("---------------------------------------------\n");
 });

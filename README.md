@@ -1,201 +1,200 @@
-# 🔐 Brute Force em Login e Bloqueio de Tentativas
+# Brute Force em Login e Bloqueio de Tentativas
 
-Projeto acadêmico que demonstra **como ataques de força bruta funcionam em sistemas de login** e como **mecanismos simples de segurança podem mitigá-los**.
-
-O repositório contém um **servidor de autenticação simples** e um **script que simula um ataque automatizado**, permitindo comparar o comportamento **antes e depois da proteção contra brute force**.
+Projeto academico que demonstra **como ataques de forca bruta funcionam em sistemas de login** e como **mecanismos simples de seguranca podem mitiga-los**.
 
 ---
 
-# 👥 Integrantes
+## Integrantes
 
 * Vitor Gabriel
 * Guilherme Peixoto
-* Nathan Nóbrega
-* João Pedro Chaves
+* Nathan Nobrega
+* Joao Pedro Chaves
 
 ---
 
-# 📌 Objetivo
+## Objetivo
 
-Demonstrar, na prática:
+Demonstrar, na pratica:
 
-1. Como um sistema de login **sem proteção** pode ser explorado por ataques de força bruta.
-2. Como **medidas simples de segurança** podem reduzir drasticamente a eficiência desses ataques.
+1. Como um sistema de login **sem protecao** pode ser explorado por ataques de forca bruta.
+2. Como **medidas simples de seguranca** podem reduzir drasticamente a eficiencia desses ataques.
 
-O projeto simula dois cenários:
-
-| Modo           | Descrição                                              |
+| Modo           | Descricao                                              |
 | -------------- | ------------------------------------------------------ |
-| **Vulnerável** | Permite tentativas ilimitadas de login                 |
-| **Protegido**  | Limita tentativas e bloqueia o usuário temporariamente |
+| **Vulneravel** | Tentativas ilimitadas, sem atraso, sem bloqueio        |
+| **Protegido**  | Atraso progressivo (10s, 20s, ...) + bloqueio de 1min |
 
 ---
 
-# 🧠 Como o Sistema Funciona
+## Como o Sistema Funciona
 
-O projeto possui dois componentes principais.
+### Servidor de Login (`server.js`)
 
-### 1️⃣ Servidor de Login (`server.js`)
+Servidor em **Node.js + Express** que:
 
-Servidor desenvolvido com **Node.js + Express** que:
+* Inicia sem perguntas — configuracao feita pela interface web
+* Serve a interface grafica em `http://localhost:3000`
+* Aceita requisicoes de login via API REST
+* Registra tentativas de acesso por usuario
 
-* recebe requisições de login
-* valida usuário e senha
-* registra tentativas de acesso
-* aplica mecanismos de proteção
+#### Modo Vulneravel
 
-Ele pode operar em dois modos:
+* Tentativas **ilimitadas**, sem atraso, sem bloqueio
 
-#### 🔴 Modo Vulnerável
+#### Modo Protegido
 
-* Permite **tentativas ilimitadas**
-* Um atacante pode testar várias senhas rapidamente
+* **Atraso progressivo**: começa em **10s** na 1a falha, +10s a cada erro subsequente (10s, 20s, 30s...)
+* **Bloqueio** apos 5 tentativas falhas: usuario bloqueado por **1 minuto**
 
-#### 🟢 Modo Protegido
+### Interface Web (`public/index.html`)
 
-O sistema ativa três mecanismos de segurança:
+Pagina limpa acessivel em `http://localhost:3000` com:
 
-**Limite de tentativas**
+* **Seletor de modo** (Vulneravel / Protegido)
+* **Campo para definir a senha** do usuario `admin` (esta e a senha que o ataque tenta descobrir)
+* **Formulario de login** para testes manuais
 
-* máximo de **5 erros consecutivos**
+### Script de Ataque (`attack.js`)
 
-**Bloqueio temporário**
+Inicia imediatamente, sem perguntas. Configuracao via argumento CLI:
 
-* usuário bloqueado por **1 minuto**
+```bash
+node attack.js [comprimento_da_senha]
+```
 
-**Atraso progressivo**
+Comportamento fixo:
 
-* cada erro aumenta o tempo de resposta
+* **Modo**: aleatorio (sem repeticao de tentativas)
+* **Charset**: alfanumerico completo — `A-Z a-z 0-9` (62 caracteres)
+* **Usuario alvo**: `admin`
 
-Essas medidas tornam o ataque **muito mais lento e ineficiente**.
+Exibe em tempo real:
+* Tentativa atual + resposta HTTP
+* Percentual de progresso
+* Tempo decorrido
+* Taxa de tentativas por segundo
+
+Ao encontrar a senha:
+* Senha descoberta
+* Total de tentativas
+* **Tempo total**
+* Taxa media
 
 ---
 
-### 2️⃣ Script de Ataque (`attack.js`)
-
-Arquivo responsável por simular um **ataque de força bruta automatizado**.
-
-Ele:
-
-* tenta várias senhas automaticamente
-* envia requisições ao servidor
-* verifica se o login foi bem sucedido
-
-Isso permite observar:
-
-* como o sistema se comporta **sem proteção**
-* como o ataque é **interrompido quando a mitigação está ativa**
-
----
-
-# 🏗 Estrutura do Repositório
+## Estrutura do Repositorio
 
 ```
-bruteforce-login
+bruteforce-login/
 │
-├── server.js        # servidor de autenticação
-├── attack.js        # script de simulação de ataque
-├── package.json     # dependências do projeto
-└── README.md        # documentação
+├── server.js          # servidor de autenticacao
+├── attack.js          # script de ataque de forca bruta
+├── public/
+│   └── index.html     # interface grafica
+├── package.json       # dependencias
+└── README.md
 ```
 
 ---
 
-# ⚙️ Tecnologias Utilizadas
+## Tecnologias
 
-* **Node.js**
+* **Node.js** >= 17.0.0
 * **Express.js**
-* **JavaScript**
+* HTML + CSS + JavaScript vanilla
 
 ---
 
-# 🚀 Como Executar
+## Como Executar
 
-### 1️⃣ Instalar dependências
+### 1. Instalar dependencias
 
 ```bash
 npm install
 ```
 
----
-
-### 2️⃣ Iniciar o servidor
+### 2. Iniciar o servidor
 
 ```bash
 npm start
 ```
 
-Servidor disponível em:
+Acesse `http://localhost:3000`:
+1. **Defina a senha** do admin no campo "Senha do Admin"
+2. **Escolha o modo** (Vulneravel ou Protegido)
 
+### 3. Executar o ataque
+
+Em outro terminal, informe o comprimento da senha definida:
+
+```bash
+node attack.js 3   # para senha de 3 caracteres
+node attack.js 4   # para senha de 4 caracteres (padrao)
 ```
-http://localhost:3000
-```
 
----
-
-### 3️⃣ Simular o ataque de força bruta
-
-Abra outro terminal e execute:
+Ou usando o script npm (usa comprimento 4 por padrao):
 
 ```bash
 npm run attack
 ```
 
-O script irá testar várias senhas automaticamente.
+---
+
+## Demonstracao
+
+### Cenario 1 — Vulneravel
+
+1. Defina uma senha curta (ex: `B3k`)
+2. Mantenha o modo **Vulneravel**
+3. Execute `node attack.js 3`
+4. O ataque testa livremente e **encontra a senha**
+
+### Cenario 2 — Protegido
+
+1. Mude para o modo **Protegido**
+2. Execute o ataque novamente
+3. Apos a 1a falha: servidor aplica **10s de atraso**; apos a 2a: **20s**; etc.
+4. Apos 5 falhas: **bloqueio de 1 minuto**
+5. O ataque e **interrompido** antes de descobrir a senha
+
+### Estimativa de duracao (modo vulneravel, ~80 req/s)
+
+| Charset      | Comprimento | Combinacoes | Tempo medio estimado |
+|--------------|-------------|-------------|----------------------|
+| Alfanumerico | 1           | 62          | < 1s                 |
+| Alfanumerico | 2           | 3.844       | ~24s                 |
+| Alfanumerico | 3           | 238.328     | ~25min               |
+| Alfanumerico | 4           | 14.776.336  | ~26h                 |
+
+> Para demos rapidas, use senhas de 1 a 2 caracteres.
 
 ---
 
-# 🧪 Demonstração do Experimento
+## API do Servidor
 
-## Cenário 1 — Sistema Vulnerável
-
-O servidor inicia no modo:
-
-```
-vulnerable
-```
-
-Nesse modo:
-
-* o sistema aceita **tentativas ilimitadas**
-* o ataque consegue testar diversas senhas
+| Metodo | Endpoint            | Descricao                                  |
+|--------|---------------------|--------------------------------------------|
+| GET    | `/mode`             | Retorna o modo atual                       |
+| POST   | `/mode`             | Altera o modo `{ "newMode": "..." }`       |
+| POST   | `/password`         | Define a senha do admin `{ "password" }`   |
+| POST   | `/login`            | Tenta login `{ "username", "password" }`   |
+| GET    | `/status/:username` | Status de tentativas do usuario            |
+| POST   | `/reset/:username`  | Reseta tentativas do usuario               |
 
 ---
 
-## Cenário 2 — Sistema Protegido
+## Mudancas da Versao 1
 
-Ao ativar o modo protegido:
-
-```
-protected
-```
-
-O sistema passa a:
-
-* limitar tentativas
-* aplicar atraso progressivo
-* bloquear o usuário temporariamente
-
-Resultado:
-
-O ataque é interrompido **antes de descobrir a senha**.
+* **Senha configuravel pela interface web**: usuario define a senha diretamente em `http://localhost:3000`, sem alterar codigo ou responder prompts
+* **Sem perguntas no terminal**: servidor e atacante iniciam direto
+* **Interface limpa**: apenas seletor de modo, definidor de senha e formulario de login
+* **Ataque simplificado**: sempre aleatorio, sempre alfanumerico completo, comprimento via argumento CLI
+* **Atraso progressivo comeca em 10s**: no modo protegido, o 1o erro ja aplica 10s de espera (antes era 1s)
+* **Exibicao de tempo e taxa**: o ataque mostra tempo decorrido e tentativas/segundo em tempo real
 
 ---
 
-# 📊 Conclusão
+## Aviso
 
-O experimento mostra que sistemas sem proteção são altamente vulneráveis a ataques de força bruta.
-
-Entretanto, medidas simples como:
-
-* limite de tentativas
-* bloqueio temporário
-* atraso progressivo
-
-já são suficientes para **reduzir significativamente a eficácia desses ataques**.
-
----
-
-# ⚠️ Aviso
-
-Este projeto foi desenvolvido **exclusivamente para fins educacionais**, com o objetivo de demonstrar conceitos básicos de **segurança em sistemas de autenticação**.
+Este projeto foi desenvolvido **exclusivamente para fins educacionais**, com o objetivo de demonstrar conceitos de **seguranca em sistemas de autenticacao**. O uso de tecnicas de forca bruta em sistemas reais sem autorizacao e **ilegal e antitico**.

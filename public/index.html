@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brute Force Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .wrapper {
+      width: 100%;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 14px;
+      padding: 1.6rem;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+    }
+
+    h2 { color: #f0f6fc; font-size: 1.1rem; margin-bottom: 0.4rem; }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: #8b949e;
+      margin-bottom: 1.2rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.3rem;
+      font-size: 0.82rem;
+      color: #8b949e;
+    }
+
+    input[type="password"] {
+      width: 100%;
+      padding: 0.65rem 0.9rem;
+      margin-bottom: 0.9rem;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      background: #0d1117;
+      color: #e6edf3;
+      font-size: 0.93rem;
+    }
+
+    input:focus { outline: none; border-color: #388bfd; }
+
+    .row { display: flex; gap: 0.6rem; }
+
+    button {
+      flex: 1;
+      padding: 0.65rem 1rem;
+      border: none;
+      border-radius: 8px;
+      background: #1f6feb;
+      color: white;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    button:hover { opacity: 0.85; }
+    button.danger  { background: #b91c1c; }
+    button.success { background: #15803d; }
+
+    .msg {
+      margin-top: 0.8rem;
+      padding: 0.6rem 0.9rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      display: none;
+    }
+
+    .msg.show    { display: block; }
+    .msg.ok      { background: #0f2d1a; color: #86efac; }
+    .msg.fail    { background: #2d0f0f; color: #f87171; }
+    .msg.info    { background: #0f1f2d; color: #60a5fa; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-left: 0.5rem;
+    }
+
+    .badge.protected  { background: #15803d; color: #dcfce7; }
+    .badge.vulnerable { background: #b91c1c; color: #fee2e2; }
+    .badge.unset      { background: #374151; color: #d1d5db; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+
+    <!-- ── Configurar senha ──────────────────────────────────────── -->
+    <div class="card">
+      <h2>Configurar senha do admin
+        <span id="pw-badge" class="badge unset">não definida</span>
+      </h2>
+
+      <label for="setup-pass">Senha</label>
+      <input type="password" id="setup-pass" placeholder="Digite a senha…" />
+
+      <button onclick="setupPassword()">Definir senha</button>
+      <div id="setup-msg" class="msg"></div>
+    </div>
+
+    <!-- ── Modo do servidor ──────────────────────────────────────── -->
+    <div class="card">
+      <h2>Modo do servidor
+        <span id="mode-badge" class="badge">…</span>
+      </h2>
+      <p class="subtitle">
+        <strong>Vulnerável:</strong> sem proteção.<br>
+        <strong>Protegido:</strong> bloqueia 15 s após 5 tentativas falhas.
+      </p>
+      <div class="row">
+        <button class="danger"  onclick="setMode('vulnerable')">Vulnerável</button>
+        <button class="success" onclick="setMode('protected')">Protegido</button>
+      </div>
+      <div id="mode-msg" class="msg"></div>
+    </div>
+
+  </div>
+
+  <script>
+    function showMsg(id, text, type) {
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.className = `msg show ${type}`;
+    }
+
+    async function refreshStatus() {
+      try {
+        const res  = await fetch("/status");
+        const data = await res.json();
+
+        const pwBadge = document.getElementById("pw-badge");
+        pwBadge.textContent = data.passwordSet ? "definida" : "não definida";
+        pwBadge.className   = `badge ${data.passwordSet ? "protected" : "unset"}`;
+
+        const modeBadge = document.getElementById("mode-badge");
+        modeBadge.textContent = data.mode === "protected" ? "protegido" : "vulnerável";
+        modeBadge.className   = `badge ${data.mode}`;
+      } catch { /* servidor offline */ }
+    }
+
+    async function setupPassword() {
+      const password = document.getElementById("setup-pass").value;
+      if (!password) { showMsg("setup-msg", "Digite uma senha.", "fail"); return; }
+
+      try {
+        const res  = await fetch("/setup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password })
+        });
+        const data = await res.json();
+        showMsg("setup-msg", data.message, data.success ? "ok" : "fail");
+        if (data.success) {
+          document.getElementById("setup-pass").value = "";
+          refreshStatus();
+        }
+      } catch { showMsg("setup-msg", "Erro ao conectar com o servidor.", "fail"); }
+    }
+
+    async function setMode(newMode) {
+      try {
+        const res  = await fetch("/mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ newMode })
+        });
+        const data = await res.json();
+        const label = newMode === "protected" ? "Modo protegido ativado." : "Modo vulnerável ativado.";
+        showMsg("mode-msg", label, data.success ? "info" : "fail");
+        if (data.success) refreshStatus();
+      } catch { showMsg("mode-msg", "Erro ao conectar com o servidor.", "fail"); }
+    }
+
+    document.getElementById("setup-pass").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") setupPassword();
+    });
+
+    refreshStatus();
+  </script>
+</body>
+</html>
