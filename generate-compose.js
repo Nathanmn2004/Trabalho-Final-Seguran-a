@@ -1,59 +1,4 @@
-// Gera docker-compose.yml com N atacantes automaticamente
-// Uso: node generate-compose.js <numero_de_atacantes> [modo]
-// Exemplos:
-//   node generate-compose.js 6
-//   node generate-compose.js 10 hybrid
-//   node generate-compose.js 10 dictionary
-//   node generate-compose.js 10 brute
-
-const fs   = require("fs");
-const path = require("path");
-
-const N    = parseInt(process.argv[2]);
-const MODE = process.argv[3] || "hybrid";
-
-const VALID_MODES = ["hybrid", "dictionary", "brute"];
-
-if (!N || N < 1 || N > 200) {
-  console.error("Uso: node generate-compose.js <numero_de_atacantes> [modo]");
-  console.error("Exemplo: node generate-compose.js 10 hybrid");
-  console.error("Limite: entre 1 e 200 atacantes");
-  process.exit(1);
-}
-
-if (!VALID_MODES.includes(MODE)) {
-  console.error(`Modo inválido: "${MODE}"`);
-  console.error(`Modos válidos: ${VALID_MODES.join(", ")}`);
-  process.exit(1);
-}
-
-function generateAttacker(index, total, mode) {
-  const id        = index + 1;
-  const lastOctet = 21 + index;
-
-  return `
-  # Atacante ${id} de ${total}
-  attacker_${id}:
-    build: .
-    volumes:
-      - ./wordlist.txt:/app/wordlist.txt
-    environment:
-      - TOTAL_ATTACKERS=${total}
-      - ATTACKER_INDEX=${index}
-      - SERVER_URL=http://172.20.0.10:3000/login
-      - ATTACKER_ID=${id}
-      - MODE=${mode}
-      - WORDLIST_PATH=/app/wordlist.txt
-    networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.${lastOctet}
-    depends_on:
-      - server`;
-}
-
-const attackers = Array.from({ length: N }, (_, i) => generateAttacker(i, N, MODE)).join("\n");
-
-const compose = `networks:
+networks:
   bruteforce_net:
     driver: bridge
     ipam:
@@ -73,22 +18,124 @@ services:
     networks:
       bruteforce_net:
         ipv4_address: 172.20.0.10
-${attackers}
-`;
+    # Healthcheck: só passa quando o servidor está no ar E a senha já foi configurada
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://172.20.0.10:3000/status | grep -q '\"passwordSet\":true'"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
 
-const outputPath = path.join(__dirname, "docker-compose.yml");
-fs.writeFileSync(outputPath, compose, "utf8");
+  # Atacante 1 de 6
+  attacker_1:
+    build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
+    environment:
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=0
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=1
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.21
+    depends_on:
+      server:
+        condition: service_healthy
 
-// Nomes dos atacantes para o comando de restart
-const attackerNames = Array.from({ length: N }, (_, i) => `attacker_${i + 1}`).join(" ");
+  # Atacante 2 de 6
+  attacker_2:
+    build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
+    environment:
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=1
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=2
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.22
+    depends_on:
+      server:
+        condition: service_healthy
 
-console.log(`\n✔ docker-compose.yml gerado com sucesso!`);
-console.log(`\nConfiguração:`);
-console.log(`  Atacantes:  ${N}`);
-console.log(`  Modo:       ${MODE}`);
-console.log(`  Servidor:   172.20.0.10:3000`);
-console.log(`  IPs:        172.20.0.21 até 172.20.0.${20 + N}`);
-console.log(`\nPara subir:`);
-console.log(`  docker-compose up --build`);
-console.log(`\nPara reiniciar só os atacantes:`);
-console.log(`  docker-compose restart ${attackerNames}\n`);
+  # Atacante 3 de 6
+  attacker_3:
+    build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
+    environment:
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=2
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=3
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.23
+    depends_on:
+      server:
+        condition: service_healthy
+
+  # Atacante 4 de 6
+  attacker_4:
+    build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
+    environment:
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=3
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=4
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.24
+    depends_on:
+      server:
+        condition: service_healthy
+
+  # Atacante 5 de 6
+  attacker_5:
+    build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
+    environment:
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=4
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=5
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.25
+    depends_on:
+      server:
+        condition: service_healthy
+
+  # Atacante 6 de 6
+  attacker_6:
+    build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
+    environment:
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=5
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=6
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.26
+    depends_on:
+      server:
+        condition: service_healthy

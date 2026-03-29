@@ -1,6 +1,6 @@
 const express = require("express");
-const path = require("path");
-const bcrypt = require("bcrypt");
+const path    = require("path");
+const bcrypt  = require("bcrypt");
 
 const app = express();
 app.use(express.json());
@@ -10,116 +10,137 @@ const PORT = 3000;
 
 // Atraso base e atraso máximo (5 minutos) para o modo protegido
 const BASE_DELAY_MS = 1000;
-const MAX_DELAY_MS = 5 * 60 * 1000;
+const MAX_DELAY_MS  = 5 * 60 * 1000;
 
 let mode = "protected";
 
-// Variável para habiliar ou desabilitar o uso do Hash Bcrypt
+// Variável para habilitar ou desabilitar o uso do Hash Bcrypt
 const USE_HASHING = true;
 
-let adminPasswordHash = null;
+let adminPasswordHash  = null;
 let adminPasswordPlain = null;
 
-const attempts = {};
+// ─────────────────────────────────────────────
+// ARMAZENAMENTO DE TENTATIVAS
+// Duas tabelas separadas: uma por username, outra por IP
+// ─────────────────────────────────────────────
+const attemptsByUser = {}; // { "admin": { failedCount, blockedUntil } }
+const attemptsByIp   = {}; // { "172.20.0.21": { failedCount, blockedUntil } }
 
-// Retorna os dados de tentativa de um usuário ou cria se não existir
-function getAttemptData(username) {
-  if (!attempts[username]) {
-    attempts[username] = { failedCount: 0, blockedUntil: null };
+// Retorna os dados de tentativa de um username ou cria se não existir
+function getUserAttempt(username) {
+  if (!attemptsByUser[username]) {
+    attemptsByUser[username] = { failedCount: 0, blockedUntil: null };
   }
-  return attempts[username];
+  return attemptsByUser[username];
 }
 
-// Verifica se o usuário está bloqueado pelo modo protegido
-function isBlocked(ua) {
-  return !!ua.blockedUntil && Date.now() < ua.blockedUntil;
+// Retorna os dados de tentativa de um IP ou cria se não existir
+function getIpAttempt(ip) {
+  if (!attemptsByIp[ip]) {
+    attemptsByIp[ip] = { failedCount: 0, blockedUntil: null };
+  }
+  return attemptsByIp[ip];
+}
+
+// Verifica se uma entrada (user ou IP) está bloqueada
+function isBlocked(entry) {
+  return !!entry.blockedUntil && Date.now() < entry.blockedUntil;
 }
 
 // Calcula quanto tempo falta para o desbloqueio
-function getRemainingBlockMs(ua) {
-  return ua.blockedUntil ? Math.max(0, ua.blockedUntil - Date.now()) : 0;
+function getRemainingBlockMs(entry) {
+  return entry.blockedUntil ? Math.max(0, entry.blockedUntil - Date.now()) : 0;
 }
 
-// Página principal 
+// Calcula o delay do exponential backoff baseado no número de falhas
+function calcDelay(failedCount) {
+  return Math.min(BASE_DELAY_MS * Math.pow(2, failedCount - 1), MAX_DELAY_MS);
+}
+
+// Extrai o IP real do cliente, considerando proxies
+function getClientIp(req) {
+  return (
+    req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
+    req.socket?.remoteAddress ||
+    "unknown"
+  );
+}
+
+// Limpa todas as tentativas (username e IP)
+function clearAllAttempts() {
+  Object.keys(attemptsByUser).forEach(k => delete attemptsByUser[k]);
+  Object.keys(attemptsByIp).forEach(k => delete attemptsByIp[k]);
+}
+
+// ─────────────────────────────────────────────
+// ROTAS
+// ─────────────────────────────────────────────
+
+// Página principal
 app.get("/", (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-//  Status do servidor, indica se senha ja foi definida e modo atual
+// Status do servidor
 app.get("/status", (_req, res) => {
   const isSet = USE_HASHING ? adminPasswordHash !== null : adminPasswordPlain !== null;
-  res.json({
-    passwordSet: isSet,
-    mode
-  });
+  res.json({ passwordSet: isSet, mode });
 });
 
-// Definir senha do admin 
+// Definir senha do admin
 app.post("/setup", async (req, res) => {
   const { password } = req.body;
 
-  // validação básica
   if (typeof password !== "string" || password.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Senha inválida."
-    });
+    return res.status(400).json({ success: false, message: "Senha inválida." });
   }
 
   try {
     if (USE_HASHING) {
       adminPasswordHash = await bcrypt.hash(password, 10);
-      console.log(`[SETUP] Senha do admin definida — hash gerado com sucesso.`);
+      console.log(`[SETUP] Senha definida — hash bcrypt gerado.`);
     } else {
       adminPasswordPlain = password;
-      console.log(`[SETUP] Senha do admin definida em texto plano — ${password.length} caractere${password.length !== 1 ? "s" : ""}.`);
+      console.log(`[SETUP] Senha definida em texto plano — ${password.length} caractere(s).`);
     }
 
-    // limpa histórico de tentativas quando a senha muda
-    Object.keys(attempts).forEach((k) => delete attempts[k]);
+    // Limpa todo o histórico de tentativas quando a senha muda
+    clearAllAttempts();
 
-    return res.json({
-      success: true,
-      message: "Senha definida."
-    });
+    return res.json({ success: true, message: "Senha definida." });
   } catch (error) {
-    console.error("[SETUP] Erro ao configurar senha:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Erro interno do servidor ao definir senha."
-    });
+    console.error("[SETUP] Erro:", error);
+    return res.status(500).json({ success: false, message: "Erro interno ao definir senha." });
   }
 });
 
-// Possibilidade de alterar o modo do sistema (vulnerável ou protegido)
+// Alterar o modo do sistema (vulnerable ou protected)
 app.post("/mode", (req, res) => {
   const { newMode } = req.body;
 
   if (!["vulnerable", "protected"].includes(newMode)) {
-    return res.status(400).json({
-      success: false,
-      message: "Modo inválido."
-    });
+    return res.status(400).json({ success: false, message: "Modo inválido." });
   }
 
   mode = newMode;
 
-  // limpa tentativas ao trocar de modo
-  Object.keys(attempts).forEach((k) => delete attempts[k]);
+  // Limpa tentativas ao trocar de modo
+  clearAllAttempts();
 
   console.log(`[MODE] Modo alterado para: ${mode}`);
 
-  res.json({
-    success: true,
-    mode
-  });
+  res.json({ success: true, mode });
 });
 
-// Endpoint de login, recebe usuário e senha e retorna o sucesso ou falha
+// ─────────────────────────────────────────────
+// ENDPOINT DE LOGIN
+// ─────────────────────────────────────────────
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
+  const clientIp = getClientIp(req);
 
-  // valida os dados enviados
+  // Valida os dados enviados
   if (typeof username !== "string" || typeof password !== "string") {
     return res.status(400).json({
       success: false,
@@ -127,7 +148,7 @@ app.post("/login", async (req, res) => {
     });
   }
 
-  // verifica se a senha do admin já foi configurada
+  // Verifica se a senha do admin já foi configurada
   const isSet = USE_HASHING ? adminPasswordHash !== null : adminPasswordPlain !== null;
   if (!isSet) {
     return res.status(503).json({
@@ -136,50 +157,87 @@ app.post("/login", async (req, res) => {
     });
   }
 
-  const ua = getAttemptData(username);
+  // ── MODO PROTEGIDO: verifica bloqueios ──
+  if (mode === "protected") {
+    const ua = getUserAttempt(username);
+    const ia = getIpAttempt(clientIp);
 
-  // se estiver em modo protegido, verifica bloqueio
-  if (mode === "protected" && isBlocked(ua)) {
-    return res.status(429).json({
-      success: false,
-      message: "Usuário temporariamente bloqueado.",
-      remainingBlockMs: getRemainingBlockMs(ua)
-    });
-  }
-
-  // valida login
-  let valid = false;
-  try {
-    if (username === "admin") {
-      if (USE_HASHING) {
-        valid = await bcrypt.compare(password, adminPasswordHash);
-      } else {
-        valid = password === adminPasswordPlain;
-      }
-    }
-  } catch (error) {
-    console.error("[LOGIN] Erro ao comparar senhas:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Erro interno do servidor."
-    });
-  }
-
-  if (!valid) {
-    ua.failedCount++;
-
-    // calcula o atraso progressivo (exponential backoff) no modo protegido
-    if (mode === "protected") {
-      const delayMs = Math.min(BASE_DELAY_MS * Math.pow(2, ua.failedCount - 1), MAX_DELAY_MS);
-      ua.blockedUntil = Date.now() + delayMs;
-
+    // Verifica bloqueio por IP primeiro
+    if (isBlocked(ia)) {
+      console.log(`[LOGIN] IP bloqueado: ${clientIp}`);
       return res.status(429).json({
         success: false,
-        message: `Senha inválida. Usuário bloqueado por ${delayMs / 1000} segundos.`,
-        failedCount: ua.failedCount,
+        blockedBy: "ip",
+        message: `IP ${clientIp} temporariamente bloqueado.`,
+        remainingBlockMs: getRemainingBlockMs(ia)
+      });
+    }
+
+    // Verifica bloqueio por username
+    if (isBlocked(ua)) {
+      console.log(`[LOGIN] Username bloqueado: ${username}`);
+      return res.status(429).json({
+        success: false,
+        blockedBy: "username",
+        message: `Usuário "${username}" temporariamente bloqueado.`,
         remainingBlockMs: getRemainingBlockMs(ua)
       });
     }
+  }
+
+  // ── VALIDA A SENHA ──
+  let valid = false;
+  try {
+    if (username === "admin") {
+      valid = USE_HASHING
+        ? await bcrypt.compare(password, adminPasswordHash)
+        : password === adminPasswordPlain;
+    }
+  } catch (error) {
+    console.error("[LOGIN] Erro ao comparar senhas:", error);
+    return res.status(500).json({ success: false, message: "Erro interno do servidor." });
+  }
+
+  // ── SENHA ERRADA ──
+  if (!valid) {
+    if (mode === "protected") {
+      const ua = getUserAttempt(username);
+      const ia = getIpAttempt(clientIp);
+
+      // Incrementa falhas e aplica exponential backoff em ambos
+      ua.failedCount++;
+      ia.failedCount++;
+
+      const userDelay = calcDelay(ua.failedCount);
+      const ipDelay   = calcDelay(ia.failedCount);
+
+      ua.blockedUntil = Date.now() + userDelay;
+      ia.blockedUntil = Date.now() + ipDelay;
+
+      console.log(
+        `[LOGIN] Falha — user: "${username}" (${ua.failedCount}x, bloqueado ${userDelay / 1000}s)` +
+        ` | IP: ${clientIp} (${ia.failedCount}x, bloqueado ${ipDelay / 1000}s)`
+      );
+
+      // Retorna o maior dos dois tempos de bloqueio para o cliente esperar
+      const remainingBlockMs = Math.max(
+        getRemainingBlockMs(ua),
+        getRemainingBlockMs(ia)
+      );
+
+      return res.status(429).json({
+        success: false,
+        message: `Senha inválida. Bloqueado por ${Math.ceil(remainingBlockMs / 1000)}s.`,
+        blockedBy: "both",
+        userFailedCount: ua.failedCount,
+        ipFailedCount:   ia.failedCount,
+        remainingBlockMs
+      });
+    }
+
+    // Modo vulnerável — só retorna 401 sem bloquear
+    const ua = getUserAttempt(username);
+    ua.failedCount++;
 
     return res.status(401).json({
       success: false,
@@ -188,17 +246,54 @@ app.post("/login", async (req, res) => {
     });
   }
 
-  // login bem-sucedido: reset das tentativas
-  ua.failedCount = 0;
-  ua.blockedUntil = null;
+  // ── LOGIN BEM-SUCEDIDO ──
+  const ua = getUserAttempt(username);
+  const ia = getIpAttempt(clientIp);
 
-  return res.json({
-    success: true,
-    message: "Login realizado com sucesso!"
+  ua.failedCount  = 0;
+  ua.blockedUntil = null;
+  ia.failedCount  = 0;
+  ia.blockedUntil = null;
+
+  console.log(`[LOGIN] Sucesso — user: "${username}" | IP: ${clientIp}`);
+
+  return res.json({ success: true, message: "Login realizado com sucesso!" });
+});
+
+// ─────────────────────────────────────────────
+// ROTA DE DEBUG — lista todos os bloqueios ativos
+// Útil para acompanhar o ataque em tempo real
+// ─────────────────────────────────────────────
+app.get("/blocks", (_req, res) => {
+  const now = Date.now();
+
+  const users = Object.entries(attemptsByUser)
+    .filter(([, v]) => isBlocked(v))
+    .map(([k, v]) => ({
+      username:         k,
+      failedCount:      v.failedCount,
+      remainingMs:      getRemainingBlockMs(v),
+      remainingSeconds: Math.ceil(getRemainingBlockMs(v) / 1000)
+    }));
+
+  const ips = Object.entries(attemptsByIp)
+    .filter(([, v]) => isBlocked(v))
+    .map(([k, v]) => ({
+      ip:               k,
+      failedCount:      v.failedCount,
+      remainingMs:      getRemainingBlockMs(v),
+      remainingSeconds: Math.ceil(getRemainingBlockMs(v) / 1000)
+    }));
+
+  res.json({
+    mode,
+    blockedUsers: users,
+    blockedIps:   ips,
+    totalBlocked: users.length + ips.length
   });
 });
 
-// inicia o servidor
+// Inicia o servidor
 app.listen(PORT, () => {
   console.log("---------------------------------------------");
   console.log("   SERVIDOR DE AUTENTICAÇÃO - BRUTE FORCE   ");
