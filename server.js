@@ -1,19 +1,24 @@
 const express = require("express");
 const path = require("path");
+const bcrypt = require("bcrypt");
 
 const app = express();
-app.use(express.json()); 
-app.use(express.static(path.join(__dirname, "public"))); 
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = 3000;
 
-// numero de tentativas e tempo de bloqueio no modo protegido
-const MAX_ATTEMPTS = 5;
-const BLOCK_TIME_MS = 15 * 1000; 
+// Atraso base e atraso máximo (5 minutos) para o modo protegido
+const BASE_DELAY_MS = 1000;
+const MAX_DELAY_MS = 5 * 60 * 1000;
 
 let mode = "protected";
 
-let adminPassword = null;
+// Variável para habiliar ou desabilitar o uso do Hash Bcrypt
+const USE_HASHING = true;
+
+let adminPasswordHash = null;
+let adminPasswordPlain = null;
 
 const attempts = {};
 
@@ -42,14 +47,15 @@ app.get("/", (_req, res) => {
 
 //  Status do servidor, indica se senha ja foi definida e modo atual
 app.get("/status", (_req, res) => {
+  const isSet = USE_HASHING ? adminPasswordHash !== null : adminPasswordPlain !== null;
   res.json({
-    passwordSet: adminPassword !== null, 
+    passwordSet: isSet,
     mode
   });
 });
 
 // Definir senha do admin 
-app.post("/setup", (req, res) => {
+app.post("/setup", async (req, res) => {
   const { password } = req.body;
 
   // validação básica
@@ -60,19 +66,29 @@ app.post("/setup", (req, res) => {
     });
   }
 
-  adminPassword = password;
+  try {
+    if (USE_HASHING) {
+      adminPasswordHash = await bcrypt.hash(password, 10);
+      console.log(`[SETUP] Senha do admin definida — hash gerado com sucesso.`);
+    } else {
+      adminPasswordPlain = password;
+      console.log(`[SETUP] Senha do admin definida em texto plano — ${password.length} caractere${password.length !== 1 ? "s" : ""}.`);
+    }
 
-  // limpa histórico de tentativas quando a senha muda
-  Object.keys(attempts).forEach((k) => delete attempts[k]);
+    // limpa histórico de tentativas quando a senha muda
+    Object.keys(attempts).forEach((k) => delete attempts[k]);
 
-  console.log(
-    `[SETUP] Senha do admin definida — ${password.length} caractere${password.length !== 1 ? "s" : ""}.`
-  );
-
-  return res.json({
-    success: true,
-    message: "Senha definida."
-  });
+    return res.json({
+      success: true,
+      message: "Senha definida."
+    });
+  } catch (error) {
+    console.error("[SETUP] Erro ao configurar senha:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro interno do servidor ao definir senha."
+    });
+  }
 });
 
 // Possibilidade de alterar o modo do sistema (vulnerável ou protegido)
@@ -100,7 +116,7 @@ app.post("/mode", (req, res) => {
 });
 
 // Endpoint de login, recebe usuário e senha e retorna o sucesso ou falha
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
   // valida os dados enviados
@@ -112,7 +128,8 @@ app.post("/login", (req, res) => {
   }
 
   // verifica se a senha do admin já foi configurada
-  if (adminPassword === null) {
+  const isSet = USE_HASHING ? adminPasswordHash !== null : adminPasswordPlain !== null;
+  if (!isSet) {
     return res.status(503).json({
       success: false,
       message: "Senha do admin ainda não foi configurada."
@@ -131,18 +148,34 @@ app.post("/login", (req, res) => {
   }
 
   // valida login
-  const valid = username === "admin" && password === adminPassword;
+  let valid = false;
+  try {
+    if (username === "admin") {
+      if (USE_HASHING) {
+        valid = await bcrypt.compare(password, adminPasswordHash);
+      } else {
+        valid = password === adminPasswordPlain;
+      }
+    }
+  } catch (error) {
+    console.error("[LOGIN] Erro ao comparar senhas:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro interno do servidor."
+    });
+  }
 
   if (!valid) {
     ua.failedCount++;
 
-    // bloqueia após cinco tentativas no modo protegido
-    if (mode === "protected" && ua.failedCount >= MAX_ATTEMPTS) {
-      ua.blockedUntil = Date.now() + BLOCK_TIME_MS;
+    // calcula o atraso progressivo (exponential backoff) no modo protegido
+    if (mode === "protected") {
+      const delayMs = Math.min(BASE_DELAY_MS * Math.pow(2, ua.failedCount - 1), MAX_DELAY_MS);
+      ua.blockedUntil = Date.now() + delayMs;
 
       return res.status(429).json({
         success: false,
-        message: "Muitas tentativas. Usuário bloqueado por 15 segundos.",
+        message: `Senha inválida. Usuário bloqueado por ${delayMs / 1000} segundos.`,
         failedCount: ua.failedCount,
         remainingBlockMs: getRemainingBlockMs(ua)
       });

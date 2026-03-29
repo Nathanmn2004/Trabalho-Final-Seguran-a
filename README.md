@@ -1,6 +1,6 @@
 # Brute Force em Login e Bloqueio de Tentativas
 
-Projeto academico que demonstra **como ataques de forca bruta funcionam em sistemas de login** e como **mecanismos simples de seguranca podem mitiga-los**.
+Projeto acadêmico que demonstra **como ataques de força bruta funcionam em sistemas de login** e como **mecanismos simples de segurança podem mitigá-los**.
 
 ---
 
@@ -8,22 +8,22 @@ Projeto academico que demonstra **como ataques de forca bruta funcionam em siste
 
 * Vitor Gabriel
 * Guilherme Peixoto
-* Nathan Nobrega
-* Joao Pedro Chaves
+* Nathan Nóbrega
+* João Pedro Chaves
 
 ---
 
 ## Objetivo
 
-Demonstrar, na pratica:
+Demonstrar, na prática:
 
-1. Como um sistema de login **sem protecao** pode ser explorado por ataques de forca bruta.
-2. Como **medidas simples de seguranca** podem reduzir drasticamente a eficiencia desses ataques.
+1. Como um sistema de login **sem proteção** pode ser explorado por ataques de força bruta exaustivos.
+2. Como **medidas de segurança** (como limite de tentativas e hashing de senhas) garantem a robustez da autenticação.
 
-| Modo           | Descricao                                              |
+| Modo           | Descrição                                              |
 | -------------- | ------------------------------------------------------ |
-| **Vulneravel** | Tentativas ilimitadas, sem atraso, sem bloqueio        |
-| **Protegido**  | Atraso progressivo (10s, 20s, ...) + bloqueio de 1min |
+| **Vulnerável** | Tentativas ilimitadas, sem atraso, sem bloqueio        |
+| **Protegido**  | Atraso progressivo (Exponential Backoff) até 5 minutos |
 
 ---
 
@@ -33,67 +33,62 @@ Demonstrar, na pratica:
 
 Servidor em **Node.js + Express** que:
 
-* Inicia sem perguntas — configuracao feita pela interface web
-* Serve a interface grafica em `http://localhost:3000`
-* Aceita requisicoes de login via API REST
-* Registra tentativas de acesso por usuario
+* Inicia sem configuração prévia da senha (feita via interface web)
+* Serve a interface gráfica em `http://localhost:3000`
+* **Armazena senhas com segurança:** Utiliza o algoritmo `bcrypt` para gerar e validar o respectivo _hash_ da senha do administrador.
+* Aceita requisições de configuração (`/setup`) e login (`/login`) via API REST.
+* Protege contra ataques mantendo um registro de falhas por usuário em memória.
 
-#### Modo Vulneravel
+#### Modo Vulnerável
 
-* Tentativas **ilimitadas**, sem atraso, sem bloqueio
+* Tentativas **ilimitadas**, sem bloqueios.
 
 #### Modo Protegido
 
-* **Atraso progressivo**: começa em **10s** na 1a falha, +10s a cada erro subsequente (10s, 20s, 30s...)
-* **Bloqueio** apos 5 tentativas falhas: usuario bloqueado por **1 minuto**
+* **Atraso progressivo (Exponential Backoff)**: A cada falha de login, a conta do usuário sofre um bloqueio imediato que **dobra** progressivamente (1s, 2s, 4s, 8s...). 
+* **Teto máximo**: O tempo de bloqueio contínua dobrando até atingir o limite de **5 minutos** (300.000 ms), impedindo ataques contínuos e mantendo o servidor disponível para demonstrações didáticas da faculdade. Durante o bloqueio, qualquer tentativa de login retorna erro `429 Too Many Requests`.
 
 ### Interface Web (`public/index.html`)
 
-Pagina limpa acessivel em `http://localhost:3000` com:
+Página limpa acessível em `http://localhost:3000` com:
 
-* **Seletor de modo** (Vulneravel / Protegido)
-* **Campo para definir a senha** do usuario `admin` (esta e a senha que o ataque tenta descobrir)
-* **Formulario de login** para testes manuais
+* **Seletor de modo** (Vulnerável / Protegido)
+* **Campo para definir a senha** do usuário `admin` (senha que o script de ataque tentará descobrir)
+* **Formulário de login** para testes manuais.
 
 ### Script de Ataque (`attack.js`)
 
-Inicia imediatamente, sem perguntas. Configuracao via argumento CLI:
+O script de ataque realiza a força bruta explorando todas as combinações de forma ordenada (A-Z, a-z, 0-9).
 
-```bash
-node attack.js [comprimento_da_senha]
-```
+Comportamento do ataque:
 
-Comportamento fixo:
+* **Modo**: Força Bruta Exaustivo (ordem lexicográfica crescente).
+* **Progresso**: Começa com 1 caractere, depois 2, depois 3 e assim indefinidamente.
+* **Charset**: Alfanumérico completo — `A-Z a-z 0-9` (62 caracteres).
+* **Usuário alvo**: `admin`.
+* **Tratamento de bloqueios**: Caso o servidor retorne um erro `429 Too Many Requests`, o atacante lê o tempo restante (`remainingBlockMs`) e entra em repouso até estar liberado a atacar novamente.
 
-* **Modo**: aleatorio (sem repeticao de tentativas)
-* **Charset**: alfanumerico completo — `A-Z a-z 0-9` (62 caracteres)
-* **Usuario alvo**: `admin`
+Exibe em tempo real (no terminal):
+* A tentativa atual realizada.
+* Resposta HTTP (`200`, `401`, `429`).
+* Tempo decorrido.
+* Taxa de tentativas por segundo (t/s).
 
-Exibe em tempo real:
-* Tentativa atual + resposta HTTP
-* Percentual de progresso
-* Tempo decorrido
-* Taxa de tentativas por segundo
-
-Ao encontrar a senha:
-* Senha descoberta
-* Total de tentativas
-* **Tempo total**
-* Taxa media
+Ao descobrir o valor, logará as estatísticas finais (Total de tentativas, tamanho da senha e tempo gasto).
 
 ---
 
-## Estrutura do Repositorio
+## Estrutura do Repositório
 
-```
+```text
 bruteforce-login/
 │
-├── server.js          # servidor de autenticacao
-├── attack.js          # script de ataque de forca bruta
+├── server.js          # servidor de autenticação (API)
+├── attack.js          # script de ataque de força bruta ordenado
 ├── public/
-│   └── index.html     # interface grafica
-├── package.json       # dependencias
-└── README.md
+│   └── index.html     # interface gráfica web
+├── package.json       # dependências (express, bcrypt)
+└── README.md          # documentação principal
 ```
 
 ---
@@ -101,14 +96,16 @@ bruteforce-login/
 ## Tecnologias
 
 * **Node.js** >= 17.0.0
-* **Express.js**
-* HTML + CSS + JavaScript vanilla
+* **Express.js** e **bcrypt**
+* HTML + CSS + JavaScript Vanilla
 
 ---
 
 ## Como Executar
 
-### 1. Instalar dependencias
+### 1. Instalar dependências
+
+Abre o terminal na pasta do projeto e execute:
 
 ```bash
 npm install
@@ -120,81 +117,40 @@ npm install
 npm start
 ```
 
-Acesse `http://localhost:3000`:
-1. **Defina a senha** do admin no campo "Senha do Admin"
-2. **Escolha o modo** (Vulneravel ou Protegido)
+Acesse `http://localhost:3000` no seu navegador:
+1. **Defina a senha** do admin preenchendo o campo de senha.
+2. **Escolha o modo do servidor** (Vulnerável ou Protegido).
 
 ### 3. Executar o ataque
 
-Em outro terminal, informe o comprimento da senha definida:
+Abra **outro** terminal na mesma pasta e inicie o script:
 
 ```bash
-node attack.js 3   # para senha de 3 caracteres
-node attack.js 4   # para senha de 4 caracteres (padrao)
+node attack.js
 ```
-
-Ou usando o script npm (usa comprimento 4 por padrao):
-
-```bash
-npm run attack
-```
+*Não é mais necessário informar o tamanho por cli argument.*
 
 ---
 
-## Demonstracao
+## Demonstração Esperada
 
-### Cenario 1 — Vulneravel
+### Cenário 1 — Vulnerável
 
-1. Defina uma senha curta (ex: `B3k`)
-2. Mantenha o modo **Vulneravel**
-3. Execute `node attack.js 3`
-4. O ataque testa livremente e **encontra a senha**
+1. Configure a senha (ex: `Ab`).
+2. Mantenha o servidor no modo **Vulnerável**.
+3. Inicie `node attack.js`.
+4. O ataque executará as requisições rapidamente, exaurirá todo o _charset_ e **encontrará a senha instantaneamente**, testando milhares de combinações por segundo.
 
-### Cenario 2 — Protegido
+### Cenário 2 — Protegido
 
-1. Mude para o modo **Protegido**
-2. Execute o ataque novamente
-3. Apos a 1a falha: servidor aplica **10s de atraso**; apos a 2a: **20s**; etc.
-4. Apos 5 falhas: **bloqueio de 1 minuto**
-5. O ataque e **interrompido** antes de descobrir a senha
-
-### Estimativa de duracao (modo vulneravel, ~80 req/s)
-
-| Charset      | Comprimento | Combinacoes | Tempo medio estimado |
-|--------------|-------------|-------------|----------------------|
-| Alfanumerico | 1           | 62          | < 1s                 |
-| Alfanumerico | 2           | 3.844       | ~24s                 |
-| Alfanumerico | 3           | 238.328     | ~25min               |
-| Alfanumerico | 4           | 14.776.336  | ~26h                 |
-
-> Para demos rapidas, use senhas de 1 a 2 caracteres.
-
----
-
-## API do Servidor
-
-| Metodo | Endpoint            | Descricao                                  |
-|--------|---------------------|--------------------------------------------|
-| GET    | `/mode`             | Retorna o modo atual                       |
-| POST   | `/mode`             | Altera o modo `{ "newMode": "..." }`       |
-| POST   | `/password`         | Define a senha do admin `{ "password" }`   |
-| POST   | `/login`            | Tenta login `{ "username", "password" }`   |
-| GET    | `/status/:username` | Status de tentativas do usuario            |
-| POST   | `/reset/:username`  | Reseta tentativas do usuario               |
-
----
-
-## Mudancas da Versao 1
-
-* **Senha configuravel pela interface web**: usuario define a senha diretamente em `http://localhost:3000`, sem alterar codigo ou responder prompts
-* **Sem perguntas no terminal**: servidor e atacante iniciam direto
-* **Interface limpa**: apenas seletor de modo, definidor de senha e formulario de login
-* **Ataque simplificado**: sempre aleatorio, sempre alfanumerico completo, comprimento via argumento CLI
-* **Atraso progressivo comeca em 10s**: no modo protegido, o 1o erro ja aplica 10s de espera (antes era 1s)
-* **Exibicao de tempo e taxa**: o ataque mostra tempo decorrido e tentativas/segundo em tempo real
+1. Mude o servidor para o modo **Protegido**.
+2. Reinicie ou inicie o ataque: `node attack.js`.
+3. Desde a 1ª falha, o servidor responderá com `429 (Too Many Requests)` indicando o atraso, começando em 1 segundo.
+4. O atacante lerá os dados e começará a repousar exponencialmente: `1s`, `2s`, `4s`, `8s` e assim por diante, até atingir os bloqueios longos de **5 minutos**.
+5. O atacante se torna incapaz de encontrar a senha via força bruta, inviabilizando tentativas numerosas. A demonstração provará matematicamente (com o tempo dobrando) que o descobrimento assíncrono de qualquer código é inviável na prática.
 
 ---
 
 ## Aviso
 
-Este projeto foi desenvolvido **exclusivamente para fins educacionais**, com o objetivo de demonstrar conceitos de **seguranca em sistemas de autenticacao**. O uso de tecnicas de forca bruta em sistemas reais sem autorizacao e **ilegal e antitico**.
+Este projeto foi desenvolvido **exclusivamente para fins educacionais**, com o objetivo de demonstrar conceitos de **segurança em sistemas de autenticação**. O uso de técnicas de força bruta em sistemas reais sem autorização é **ilegal e antiético**.
