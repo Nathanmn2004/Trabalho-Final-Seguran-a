@@ -1,0 +1,64 @@
+version: "3.8"
+
+networks:
+  bruteforce_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+services:
+  # O servidor de autenticação
+  server:
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: sh -c "npm install && node server.js"
+    ports:
+      - "3000:3000"
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.10
+
+  # Atacante 1 — charset: A-R (primeiros 18 de 62)
+  attacker_1:
+    build: .
+    environment:
+      - START_INDEX=0
+      - END_INDEX=17
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=1
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.21
+    depends_on:
+      - server
+
+  # Atacante 2 — charset: S-j (índices 18 a 35)
+  attacker_2:
+    build: .
+    environment:
+      - START_INDEX=18
+      - END_INDEX=35
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=2
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.22
+    depends_on:
+      - server
+
+  # Atacante 3 — charset: k-9 (índices 36 a 61)
+  attacker_3:
+    build: .
+    environment:
+      - START_INDEX=36
+      - END_INDEX=61
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=3
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.23
+    depends_on:
+      - server
