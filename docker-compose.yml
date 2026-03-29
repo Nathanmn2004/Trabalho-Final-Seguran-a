@@ -1,5 +1,3 @@
-version: "3.8"
-
 networks:
   bruteforce_net:
     driver: bridge
@@ -8,7 +6,7 @@ networks:
         - subnet: 172.20.0.0/24
 
 services:
-  # O servidor de autenticação
+  # Servidor de autenticação
   server:
     image: node:18-alpine
     working_dir: /app
@@ -21,44 +19,110 @@ services:
       bruteforce_net:
         ipv4_address: 172.20.0.10
 
-  # Atacante 1 — charset: A-R (primeiros 18 de 62)
+  # Atacante 1 de 6
   attacker_1:
     build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt  # monta a wordlist dentro do container
     environment:
-      - START_INDEX=0
-      - END_INDEX=17
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=0
       - SERVER_URL=http://172.20.0.10:3000/login
       - ATTACKER_ID=1
+      - MODE=hybrid           # hybrid | dictionary | brute
+      - WORDLIST_PATH=/app/wordlist.txt
     networks:
       bruteforce_net:
         ipv4_address: 172.20.0.21
     depends_on:
       - server
 
-  # Atacante 2 — charset: S-j (índices 18 a 35)
+  # Atacante 2 de 6
   attacker_2:
     build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
     environment:
-      - START_INDEX=18
-      - END_INDEX=35
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=1
       - SERVER_URL=http://172.20.0.10:3000/login
       - ATTACKER_ID=2
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
     networks:
       bruteforce_net:
         ipv4_address: 172.20.0.22
     depends_on:
       - server
 
-  # Atacante 3 — charset: k-9 (índices 36 a 61)
+  # Atacante 3 de 6
   attacker_3:
     build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
     environment:
-      - START_INDEX=36
-      - END_INDEX=61
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=2
       - SERVER_URL=http://172.20.0.10:3000/login
       - ATTACKER_ID=3
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
     networks:
       bruteforce_net:
         ipv4_address: 172.20.0.23
+    depends_on:
+      - server
+
+  # Atacante 4 de 6
+  attacker_4:
+    build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
+    environment:
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=3
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=4
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.24
+    depends_on:
+      - server
+
+  # Atacante 5 de 6
+  attacker_5:
+    build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
+    environment:
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=4
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=5
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.25
+    depends_on:
+      - server
+
+  # Atacante 6 de 6
+  attacker_6:
+    build: .
+    volumes:
+      - ./wordlist.txt:/app/wordlist.txt
+    environment:
+      - TOTAL_ATTACKERS=6
+      - ATTACKER_INDEX=5
+      - SERVER_URL=http://172.20.0.10:3000/login
+      - ATTACKER_ID=6
+      - MODE=hybrid
+      - WORDLIST_PATH=/app/wordlist.txt
+    networks:
+      bruteforce_net:
+        ipv4_address: 172.20.0.26
     depends_on:
       - server
