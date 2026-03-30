@@ -1,32 +1,11 @@
 networks:
-  bruteforce_net:
+  attack_net:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/24
+        - subnet: 172.21.0.0/24
 
 services:
-  # Servidor de autenticação
-  server:
-    image: node:18-alpine
-    working_dir: /app
-    volumes:
-      - ./:/app
-    command: sh -c "npm install && node server.js"
-    ports:
-      - "3000:3000"
-    networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.10
-    # Healthcheck: só passa quando o servidor está no ar E a senha já foi configurada
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://172.20.0.10:3000/status | grep -q '\"passwordSet\":true'"]
-      interval: 3s
-      timeout: 3s
-      retries: 30
-      start_period: 5s
-
-  # Atacante 1 de 20
   attacker_1:
     build: .
     volumes:
@@ -34,18 +13,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=0
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=1
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.21
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.21
 
-  # Atacante 2 de 20
   attacker_2:
     build: .
     volumes:
@@ -53,18 +28,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=1
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=2
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.22
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.22
 
-  # Atacante 3 de 20
   attacker_3:
     build: .
     volumes:
@@ -72,18 +43,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=2
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=3
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.23
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.23
 
-  # Atacante 4 de 20
   attacker_4:
     build: .
     volumes:
@@ -91,18 +58,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=3
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=4
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.24
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.24
 
-  # Atacante 5 de 20
   attacker_5:
     build: .
     volumes:
@@ -110,18 +73,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=4
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=5
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.25
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.25
 
-  # Atacante 6 de 20
   attacker_6:
     build: .
     volumes:
@@ -129,18 +88,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=5
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=6
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.26
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.26
 
-  # Atacante 7 de 20
   attacker_7:
     build: .
     volumes:
@@ -148,18 +103,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=6
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=7
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.27
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.27
 
-  # Atacante 8 de 20
   attacker_8:
     build: .
     volumes:
@@ -167,18 +118,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=7
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=8
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.28
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.28
 
-  # Atacante 9 de 20
   attacker_9:
     build: .
     volumes:
@@ -186,18 +133,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=8
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=9
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.29
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.29
 
-  # Atacante 10 de 20
   attacker_10:
     build: .
     volumes:
@@ -205,18 +148,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=9
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=10
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.30
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.30
 
-  # Atacante 11 de 20
   attacker_11:
     build: .
     volumes:
@@ -224,18 +163,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=10
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=11
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.31
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.31
 
-  # Atacante 12 de 20
   attacker_12:
     build: .
     volumes:
@@ -243,18 +178,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=11
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=12
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.32
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.32
 
-  # Atacante 13 de 20
   attacker_13:
     build: .
     volumes:
@@ -262,18 +193,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=12
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=13
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.33
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.33
 
-  # Atacante 14 de 20
   attacker_14:
     build: .
     volumes:
@@ -281,18 +208,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=13
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=14
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.34
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.34
 
-  # Atacante 15 de 20
   attacker_15:
     build: .
     volumes:
@@ -300,18 +223,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=14
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=15
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.35
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.35
 
-  # Atacante 16 de 20
   attacker_16:
     build: .
     volumes:
@@ -319,18 +238,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=15
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=16
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.36
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.36
 
-  # Atacante 17 de 20
   attacker_17:
     build: .
     volumes:
@@ -338,18 +253,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=16
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=17
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.37
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.37
 
-  # Atacante 18 de 20
   attacker_18:
     build: .
     volumes:
@@ -357,18 +268,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=17
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=18
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.38
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.38
 
-  # Atacante 19 de 20
   attacker_19:
     build: .
     volumes:
@@ -376,18 +283,14 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=18
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=19
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.39
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.39
 
-  # Atacante 20 de 20
   attacker_20:
     build: .
     volumes:
@@ -395,13 +298,10 @@ services:
     environment:
       - TOTAL_ATTACKERS=20
       - ATTACKER_INDEX=19
-      - SERVER_URL=http://172.20.0.10:3000/login
+      - SERVER_URL=${SERVER_URL}
       - ATTACKER_ID=20
       - MODE=hybrid
       - WORDLIST_PATH=/app/wordlist.txt
     networks:
-      bruteforce_net:
-        ipv4_address: 172.20.0.40
-    depends_on:
-      server:
-        condition: service_healthy
+      attack_net:
+        ipv4_address: 172.21.0.40

@@ -22,8 +22,8 @@ Demonstrar, na prática:
 
 | Modo           | Descrição                                              |
 | -------------- | ------------------------------------------------------ |
-| **Vulnerável** | Tentativas ilimitadas, sem atraso, sem bloqueio        |
-| **Protegido**  | Atraso progressivo (Exponential Backoff) até 5 minutos |
+| **Vulnerável** | Sem proteção alguma — plaintext, sem bloqueios, resposta instantânea |
+| **Protegido**  | Proteções configuráveis: bcrypt, bloqueio por IP e bloqueio por username |
 
 ---
 
@@ -41,28 +41,45 @@ Servidor em **Node.js + Express** que:
 
 #### Modo Vulnerável
 
-* Tentativas **ilimitadas**, sem bloqueios.
+* Comparação de senha em **texto plano** — sem bcrypt, resposta instantânea.
+* Tentativas **ilimitadas**, sem bloqueios de qualquer tipo.
 
 #### Modo Protegido
 
-* **Atraso progressivo (Exponential Backoff)**: A cada falha de login, a conta do usuário sofre um bloqueio imediato que **dobra** progressivamente (1s, 2s, 4s, 8s...). 
-* **Teto máximo**: O tempo de bloqueio contínua dobrando até atingir o limite de **5 minutos** (300.000 ms), impedindo ataques contínuos e mantendo o servidor disponível para demonstrações didáticas da faculdade. Durante o bloqueio, qualquer tentativa de login retorna erro `429 Too Many Requests`.
+Permite ativar individualmente cada proteção:
+
+* **Hash bcrypt:** cada verificação leva ~100ms, reduzindo a taxa de ataque de centenas para ~10 t/s.
+* **Bloqueio por IP:** atraso progressivo (Exponential Backoff) a cada falha — 1s, 2s, 4s, 8s... até 5 minutos. Eficaz contra um único atacante.
+* **Bloqueio por username:** mesmo backoff aplicado ao usuário `admin`, independente do IP. Eficaz mesmo contra ataques distribuídos com múltiplos IPs.
+
+Durante o bloqueio, qualquer tentativa de login retorna erro `429 Too Many Requests`.
 
 ### Interface Web (`public/index.html`)
 
 Página limpa acessível em `http://localhost:3000` com:
 
 * **Seletor de modo** (Vulnerável / Protegido)
+* **Painel de proteções** (visível no modo protegido): checkboxes para ativar/desativar bcrypt, bloqueio por IP e bloqueio por username individualmente
 * **Campo para definir a senha** do usuário `admin` (senha que o script de ataque tentará descobrir)
-* **Formulário de login** para testes manuais.
+* **Botão de acesso ao dashboard** de monitoramento
+
+### Dashboard (`public/dashboard.html`)
+
+Acessível em `http://localhost:3000/dashboard.html`. Possui duas abas:
+
+* **Tempo Real:** gráfico de t/s nos últimos 60s, contadores de tentativas/bloqueios, cronômetro de execução e lista de IPs/usernames bloqueados.
+* **Comparativo:** salva snapshots de cada cenário e exibe gráficos de barras comparando total de tentativas, bloqueios, taxa média e tempo para descobrir a senha.
 
 ### Script de Ataque (`attack.js`)
 
-O script de ataque realiza a força bruta explorando todas as combinações de forma ordenada (A-Z, a-z, 0-9).
+O script de ataque realiza a força bruta explorando todas as combinações de forma ordenada (A-Z, a-z, 0-9), com duas fases:
+
+* **Fase 1 — Dicionário:** testa as 118 senhas mais comuns do `wordlist.txt`.
+* **Fase 2 — Força Bruta:** percorre todas as combinações alfanuméricas em ordem crescente.
 
 Comportamento do ataque:
 
-* **Modo**: Força Bruta Exaustivo (ordem lexicográfica crescente).
+* **Modo**: Híbrido por padrão (dicionário primeiro, depois força bruta).
 * **Progresso**: Começa com 1 caractere, depois 2, depois 3 e assim indefinidamente.
 * **Charset**: Alfanumérico completo — `A-Z a-z 0-9` (62 caracteres).
 * **Usuário alvo**: `admin`.
@@ -74,21 +91,26 @@ Exibe em tempo real (no terminal):
 * Tempo decorrido.
 * Taxa de tentativas por segundo (t/s).
 
-Ao descobrir o valor, logará as estatísticas finais (Total de tentativas, tamanho da senha e tempo gasto).
+Ao descobrir a senha, exibe as estatísticas finais (total de tentativas, tamanho da senha e tempo gasto).
 
 ---
 
 ## Estrutura do Repositório
 
 ```text
-bruteforce-login/
+Trabalho-Final-Segurança/
 │
-├── server.js          # servidor de autenticação (API)
-├── attack.js          # script de ataque de força bruta ordenado
+├── server.js                  # servidor de autenticação com proteções configuráveis
+├── attack.js                  # script de ataque distribuído (força bruta + dicionário)
+├── docker-compose.yml         # sobe servidor + 20 atacantes (rede interna)
+├── docker-compose.attack.yml  # sobe apenas os 20 atacantes (aponta para URL externa)
+├── Dockerfile                 # imagem dos containers atacantes
+├── start-attack.sh            # script interativo para disparar o ataque distribuído
+├── wordlist.txt               # lista de 118 senhas comuns (fase de dicionário)
 ├── public/
-│   └── index.html     # interface gráfica web
-├── package.json       # dependências (express, bcrypt)
-└── README.md          # documentação principal
+│   ├── index.html             # interface de controle do servidor
+│   └── dashboard.html         # dashboard de monitoramento e comparativo
+└── package.json               # dependências (express, bcrypt)
 ```
 
 ---
@@ -97,15 +119,15 @@ bruteforce-login/
 
 * **Node.js** >= 17.0.0
 * **Express.js** e **bcrypt**
-* HTML + CSS + JavaScript Vanilla
+* **Docker** e **Docker Compose**
+* **ngrok** (opcional, para exposição do servidor na internet)
+* HTML + CSS + JavaScript Vanilla + Chart.js
 
 ---
 
 ## Como Executar
 
 ### 1. Instalar dependências
-
-Abre o terminal na pasta do projeto e execute:
 
 ```bash
 npm install
@@ -117,18 +139,32 @@ npm install
 npm start
 ```
 
-Acesse `http://localhost:3000` no seu navegador:
-1. **Defina a senha** do admin preenchendo o campo de senha.
-2. **Escolha o modo do servidor** (Vulnerável ou Protegido).
+### 3. Abrir o túnel ngrok (opcional — para ataque de outra máquina)
 
-### 3. Executar o ataque
-
-Abra **outro** terminal na mesma pasta e inicie o script:
+Em outro terminal:
 
 ```bash
-node attack.js
+ngrok http 3000
 ```
-*Não é mais necessário informar o tamanho por cli argument.*
+
+O ngrok exibirá uma URL pública. Copie-a — será usada pelo script de ataque.
+
+### 4. Configurar o servidor
+
+Acesse `http://localhost:3000`:
+1. **Defina a senha** do admin.
+2. **Escolha o modo** (Vulnerável ou Protegido).
+3. Se protegido, **selecione as proteções** desejadas e clique em **Aplicar**.
+
+### 5. Disparar o ataque com 20 bots
+
+Em outro terminal:
+
+```bash
+./start-attack.sh
+```
+
+O script pergunta se o alvo é **localhost** ou **ngrok**. Se ngrok, solicita a URL. Os 20 containers são disparados automaticamente em paralelo.
 
 ---
 
@@ -138,16 +174,28 @@ node attack.js
 
 1. Configure a senha (ex: `Ab`).
 2. Mantenha o servidor no modo **Vulnerável**.
-3. Inicie `node attack.js`.
-4. O ataque executará as requisições rapidamente, exaurirá todo o _charset_ e **encontrará a senha instantaneamente**, testando milhares de combinações por segundo.
+3. Inicie `./start-attack.sh` → opção localhost.
+4. O ataque executará centenas de requisições por segundo e **encontrará a senha em segundos**.
 
-### Cenário 2 — Protegido
+### Cenário 2 — Protegido (todas as proteções)
 
-1. Mude o servidor para o modo **Protegido**.
-2. Reinicie ou inicie o ataque: `node attack.js`.
-3. Desde a 1ª falha, o servidor responderá com `429 (Too Many Requests)` indicando o atraso, começando em 1 segundo.
-4. O atacante lerá os dados e começará a repousar exponencialmente: `1s`, `2s`, `4s`, `8s` e assim por diante, até atingir os bloqueios longos de **5 minutos**.
-5. O atacante se torna incapaz de encontrar a senha via força bruta, inviabilizando tentativas numerosas. A demonstração provará matematicamente (com o tempo dobrando) que o descobrimento assíncrono de qualquer código é inviável na prática.
+1. Mude o servidor para o modo **Protegido** com bcrypt + bloqueio por IP + bloqueio por username.
+2. Inicie `./start-attack.sh`.
+3. Desde a 1ª falha, o servidor responderá com `429 (Too Many Requests)`.
+4. O atacante aguardará exponencialmente: `1s`, `2s`, `4s`, `8s`... até 5 minutos.
+5. O tempo para descobrir a senha se torna inviável na prática.
+
+### Cenário 3 — Protegido só com bloqueio por IP
+
+1. Ative apenas **Bloqueio por IP** (desative bcrypt e bloqueio por username).
+2. Inicie `./start-attack.sh`.
+3. Cada bot tem um IP diferente — cada IP tem seu próprio contador zerado — o bloqueio por IP **não resiste** ao ataque distribuído.
+
+### Cenário 4 — Protegido só com bloqueio por username
+
+1. Ative apenas **Bloqueio por username**.
+2. Inicie `./start-attack.sh`.
+3. Todos os bots atacam o mesmo usuário `admin` — o bloqueio por username **resiste** ao ataque distribuído, independente do número de IPs.
 
 ---
 

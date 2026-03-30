@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — Brute Force Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      color: #f0f6fc;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .mode-badge {
+      display: inline-block;
+      padding: 0.2rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .mode-badge.protected  { background: #15803d; color: #dcfce7; }
+    .mode-badge.vulnerable { background: #b91c1c; color: #fee2e2; }
+
+    /* ── tabs ── */
+    .tabs {
+      display: flex;
+      gap: 0.25rem;
+      border-bottom: 1px solid #30363d;
+      margin-bottom: 1.5rem;
+    }
+    .tab-btn {
+      padding: 0.55rem 1.2rem;
+      border: none;
+      background: transparent;
+      color: #8b949e;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn.active {
+      color: #f0f6fc;
+      border-bottom-color: #388bfd;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── cards ── */
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 1.4rem;
+    }
+
+    .card h2 {
+      font-size: 0.85rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    .card .value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #f0f6fc;
+      line-height: 1;
+    }
+
+    .card .value.green  { color: #4ade80; }
+    .card .value.red    { color: #f87171; }
+    .card .value.yellow { color: #fbbf24; }
+    .card .value.blue   { color: #60a5fa; }
+
+    /* ── stat grid ── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── chart card ── */
+    .chart-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 1.4rem;
+      margin-bottom: 1.5rem;
+    }
+    .chart-card h2 {
+      font-size: 0.9rem;
+      color: #8b949e;
+      margin-bottom: 1rem;
+    }
+
+    /* ── blocks list ── */
+    .blocks-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .block-list {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 1.2rem;
+    }
+    .block-list h3 {
+      font-size: 0.82rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.8rem;
+    }
+    .block-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid #21262d;
+      font-size: 0.85rem;
+    }
+    .block-item:last-child { border-bottom: none; }
+    .block-item .name { color: #e6edf3; font-family: monospace; }
+    .block-time {
+      background: #2d1b1b;
+      color: #f87171;
+      padding: 0.1rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+    }
+    .empty-state {
+      color: #8b949e;
+      font-size: 0.82rem;
+      text-align: center;
+      padding: 0.5rem 0;
+    }
+
+    /* ── actions bar ── */
+    .actions {
+      display: flex;
+      gap: 0.6rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 0.55rem 1rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.8; }
+    .btn-primary { background: #1f6feb; color: #fff; }
+    .btn-danger  { background: #b91c1c; color: #fff; }
+    .btn-ghost   { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+
+    /* ── snapshot form ── */
+    .snapshot-form {
+      display: flex;
+      gap: 0.6rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .snapshot-form input {
+      flex: 1;
+      min-width: 200px;
+      padding: 0.55rem 0.9rem;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      color: #e6edf3;
+      font-size: 0.88rem;
+    }
+    .snapshot-form input:focus { outline: none; border-color: #388bfd; }
+
+    /* ── comparison charts ── */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── snapshot table ── */
+    .snap-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+    }
+    .snap-table th {
+      text-align: left;
+      padding: 0.6rem 0.8rem;
+      border-bottom: 1px solid #30363d;
+      color: #8b949e;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+    }
+    .snap-table td {
+      padding: 0.65rem 0.8rem;
+      border-bottom: 1px solid #21262d;
+      color: #c9d1d9;
+    }
+    .snap-table tr:last-child td { border-bottom: none; }
+    .snap-table tr:hover td { background: #1c2128; }
+
+    .tag-protected  { color: #4ade80; }
+    .tag-vulnerable { color: #f87171; }
+
+    .no-snapshots {
+      text-align: center;
+      padding: 2rem;
+      color: #8b949e;
+      font-size: 0.88rem;
+    }
+
+    /* ── nav link ── */
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1.5rem;
+      font-size: 0.82rem;
+      color: #388bfd;
+      text-decoration: none;
+    }
+    .nav-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+  <a href="/" class="nav-link">← Voltar para configuração</a>
+
+  <h1>
+    Monitor de Ataques
+    <span id="mode-badge" class="mode-badge">…</span>
+  </h1>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('realtime', this)">Tempo Real</button>
+    <button class="tab-btn"        onclick="switchTab('compare',  this)">Comparativo</button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       TAB 1 — TEMPO REAL
+  ══════════════════════════════════════════════ -->
+  <div id="tab-realtime" class="tab-panel active">
+
+    <div class="actions">
+      <button class="btn-ghost" onclick="resetMetrics()">Zerar métricas</button>
+    </div>
+
+    <div class="stat-grid">
+      <div class="card">
+        <h2>Total de tentativas</h2>
+        <div id="stat-total" class="value blue">0</div>
+      </div>
+      <div class="card">
+        <h2>Bloqueadas (429)</h2>
+        <div id="stat-blocked" class="value red">0</div>
+      </div>
+      <div class="card">
+        <h2>Taxa atual</h2>
+        <div id="stat-tps" class="value yellow"><span id="stat-tps-value">0</span> <span style="font-size:1rem;color:#8b949e">t/s</span></div>
+      </div>
+      <div class="card">
+        <h2>Logins bem-sucedidos</h2>
+        <div id="stat-success" class="value green">0</div>
+      </div>
+      <div class="card" style="grid-column: 1 / -1">
+        <h2>Tempo de execução</h2>
+        <div id="stat-timer" class="value" style="color:#e2b714;font-size:2.4rem">00:00:00</div>
+        <div id="stat-timer-label" style="font-size:0.8rem;color:#8b949e;margin-top:0.3rem">aguardando início do ataque...</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <h2>Tentativas por segundo — últimos 60s</h2>
+      <canvas id="tps-chart" height="90"></canvas>
+    </div>
+
+    <div class="blocks-grid">
+      <div class="block-list">
+        <h3>Usernames bloqueados</h3>
+        <div id="blocked-users"><div class="empty-state">Nenhum bloqueio ativo</div></div>
+      </div>
+      <div class="block-list">
+        <h3>IPs bloqueados</h3>
+        <div id="blocked-ips"><div class="empty-state">Nenhum bloqueio ativo</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       TAB 2 — COMPARATIVO
+  ══════════════════════════════════════════════ -->
+  <div id="tab-compare" class="tab-panel">
+
+    <div class="snapshot-form">
+      <input type="text" id="snap-label" placeholder="Ex: Vulnerável — 6 bots, senha: Ab" />
+      <button class="btn-primary" onclick="saveSnapshot()">Salvar snapshot do cenário atual</button>
+      <button class="btn-danger"  onclick="clearSnapshots()">Limpar tudo</button>
+    </div>
+
+    <div id="no-snapshots" class="no-snapshots">
+      Nenhum snapshot salvo ainda.<br>
+      Execute um cenário de ataque e clique em "Salvar snapshot" para registrá-lo aqui.
+    </div>
+
+    <div id="compare-charts" style="display:none">
+      <div class="compare-grid">
+        <div class="chart-card">
+          <h2>Total de tentativas por cenário</h2>
+          <canvas id="chart-attempts"></canvas>
+        </div>
+        <div class="chart-card">
+          <h2>Tentativas bloqueadas por cenário</h2>
+          <canvas id="chart-blocked"></canvas>
+        </div>
+        <div class="chart-card">
+          <h2>Taxa média (t/s) por cenário</h2>
+          <canvas id="chart-tps"></canvas>
+        </div>
+        <div class="chart-card">
+          <h2>Tempo para descobrir a senha (segundos)</h2>
+          <canvas id="chart-time"></canvas>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <h2>Tabela de snapshots</h2>
+        <table class="snap-table">
+          <thead>
+            <tr>
+              <th>Cenário</th>
+              <th>Modo</th>
+              <th>Total</th>
+              <th>Bloqueadas</th>
+              <th>Taxa média</th>
+              <th>Tempo total</th>
+              <th>Logins OK</th>
+              <th>Salvo em</th>
+            </tr>
+          </thead>
+          <tbody id="snap-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function formatMs(ms) {
+      if (!ms) return "00:00:00";
+      const h = String(Math.floor(ms / 3600000)).padStart(2, "0");
+      const m = String(Math.floor((ms % 3600000) / 60000)).padStart(2, "0");
+      const s = String(Math.floor((ms % 60000) / 1000)).padStart(2, "0");
+      return `${h}:${m}:${s}`;
+    }
+
+    // ── estado dos gráficos ──
+    let tpsChart        = null;
+    let chartAttempts   = null;
+    let chartBlocked    = null;
+    let chartTps        = null;
+    let chartTime       = null;
+
+    const CHART_COLORS = [
+      "#388bfd", "#f87171", "#4ade80", "#fbbf24",
+      "#a78bfa", "#34d399", "#fb923c", "#38bdf8"
+    ];
+
+    // ── tabs ──
+    function switchTab(name, btn) {
+      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.getElementById(`tab-${name}`).classList.add("active");
+      btn.classList.add("active");
+    }
+
+    // ── gráfico de tempo real ──
+    function initTpsChart() {
+      const ctx = document.getElementById("tps-chart").getContext("2d");
+      tpsChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: Array.from({ length: 60 }, (_, i) => i === 59 ? "agora" : `-${59 - i}s`),
+          datasets: [{
+            label: "t/s",
+            data: new Array(60).fill(0),
+            borderColor: "#388bfd",
+            backgroundColor: "rgba(56,139,253,0.1)",
+            borderWidth: 2,
+            pointRadius: 0,
+            fill: true,
+            tension: 0.3,
+          }]
+        },
+        options: {
+          animation: false,
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: "#8b949e", maxTicksLimit: 10 }, grid: { color: "#21262d" } },
+            y: { beginAtZero: true, ticks: { color: "#8b949e" }, grid: { color: "#21262d" } }
+          }
+        }
+      });
+    }
+
+    // ── atualiza dashboard em tempo real ──
+    async function refresh() {
+      try {
+        const res  = await fetch("/metrics");
+        const data = await res.json();
+
+        document.getElementById("stat-total").textContent   = data.totalAttempts.toLocaleString("pt-BR");
+        document.getElementById("stat-blocked").textContent = data.blockedAttempts.toLocaleString("pt-BR");
+        document.getElementById("stat-tps-value").textContent = data.currentTps;
+        document.getElementById("stat-success").textContent = data.successfulLogins;
+
+        // Timer
+        const timerEl      = document.getElementById("stat-timer");
+        const timerLabel   = document.getElementById("stat-timer-label");
+        timerEl.textContent = formatMs(data.elapsedMs);
+        if (data.finished) {
+          timerEl.style.color  = "#4ade80";
+          timerLabel.textContent = "senha descoberta!";
+        } else if (data.elapsedMs > 0) {
+          timerEl.style.color  = "#e2b714";
+          timerLabel.textContent = "ataque em andamento...";
+        } else {
+          timerEl.style.color  = "#e2b714";
+          timerLabel.textContent = "aguardando início do ataque...";
+        }
+
+        const badge = document.getElementById("mode-badge");
+        badge.textContent = data.mode === "protected" ? "protegido" : "vulnerável";
+        badge.className   = `mode-badge ${data.mode}`;
+
+        tpsChart.data.datasets[0].data = data.history;
+        tpsChart.update("none");
+
+        // Bloqueios ativos
+        renderBlockList("blocked-users", data.activeBlocks.users, u =>
+          `<div class="block-item"><span class="name">${u.username}</span><span class="block-time">${u.remainingSeconds}s</span></div>`
+        );
+        renderBlockList("blocked-ips", data.activeBlocks.ips, ip =>
+          `<div class="block-item"><span class="name">${ip.ip}</span><span class="block-time">${ip.remainingSeconds}s</span></div>`
+        );
+
+      } catch { /* servidor offline */ }
+    }
+
+    function renderBlockList(containerId, items, template) {
+      const el      = document.getElementById(containerId);
+      const newHtml = items.length
+        ? items.map(template).join("")
+        : `<div class="empty-state">Nenhum bloqueio ativo</div>`;
+      if (el.innerHTML !== newHtml) el.innerHTML = newHtml;
+    }
+
+    // ── reset métricas ──
+    async function resetMetrics() {
+      await fetch("/metrics/reset", { method: "POST" });
+      refresh();
+    }
+
+    // ── snapshots ──
+    async function saveSnapshot() {
+      const label = document.getElementById("snap-label").value.trim();
+      await fetch("/metrics/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label })
+      });
+      document.getElementById("snap-label").value = "";
+      loadSnapshots();
+    }
+
+    async function clearSnapshots() {
+      await fetch("/metrics/snapshots", { method: "DELETE" });
+      loadSnapshots();
+    }
+
+    async function loadSnapshots() {
+      const snaps = await (await fetch("/metrics/snapshots")).json();
+      const noSnap  = document.getElementById("no-snapshots");
+      const charts  = document.getElementById("compare-charts");
+
+      if (snaps.length === 0) {
+        noSnap.style.display  = "block";
+        charts.style.display  = "none";
+        return;
+      }
+
+      noSnap.style.display = "none";
+      charts.style.display = "block";
+
+      renderCompareCharts(snaps);
+      renderSnapTable(snaps);
+    }
+
+    function renderCompareCharts(snaps) {
+      const labels = snaps.map(s => s.label);
+      const colors = snaps.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
+
+      buildBarChart("chart-attempts", chartAttempts, labels, snaps.map(s => s.totalAttempts),               colors, "Tentativas");
+      buildBarChart("chart-blocked",  chartBlocked,  labels, snaps.map(s => s.blockedAttempts),             colors, "Bloqueadas");
+      buildBarChart("chart-tps",      chartTps,      labels, snaps.map(s => s.avgTps),                      colors, "t/s médio");
+      buildBarChart("chart-time",     chartTime,     labels, snaps.map(s => Math.round(s.elapsedMs / 1000)), colors, "Segundos");
+    }
+
+    function buildBarChart(canvasId, existingChart, labels, data, colors, label) {
+      if (existingChart) existingChart.destroy();
+      const ctx = document.getElementById(canvasId).getContext("2d");
+      const chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label,
+            data,
+            backgroundColor: colors.map(c => c + "cc"),
+            borderColor: colors,
+            borderWidth: 1,
+            borderRadius: 6,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ` ${ctx.formattedValue}` } }
+          },
+          scales: {
+            x: { ticks: { color: "#8b949e" }, grid: { color: "#21262d" } },
+            y: { beginAtZero: true, ticks: { color: "#8b949e" }, grid: { color: "#21262d" } }
+          }
+        }
+      });
+
+      if (canvasId === "chart-attempts") chartAttempts = chart;
+      if (canvasId === "chart-blocked")  chartBlocked  = chart;
+      if (canvasId === "chart-tps")      chartTps      = chart;
+      if (canvasId === "chart-time")     chartTime     = chart;
+    }
+
+    function renderSnapTable(snaps) {
+      const tbody = document.getElementById("snap-tbody");
+      tbody.innerHTML = snaps.map(s => `
+        <tr>
+          <td>${s.label}</td>
+          <td class="${s.mode === 'protected' ? 'tag-protected' : 'tag-vulnerable'}">
+            ${s.mode === "protected" ? "Protegido" : "Vulnerável"}
+          </td>
+          <td>${s.totalAttempts.toLocaleString("pt-BR")}</td>
+          <td>${s.blockedAttempts.toLocaleString("pt-BR")}</td>
+          <td>${s.avgTps} t/s</td>
+          <td>${formatMs(s.elapsedMs)}</td>
+          <td>${s.successfulLogins}</td>
+          <td>${s.savedAt}</td>
+        </tr>
+      `).join("");
+    }
+
+    // ── init ──
+    initTpsChart();
+    refresh();
+    loadSnapshots();
+    setInterval(refresh, 1000);
+    setInterval(() => {
+      const activeTab = document.querySelector(".tab-btn.active");
+      if (activeTab && activeTab.textContent.trim() === "Comparativo") loadSnapshots();
+    }, 3000);
+  </script>
+</body>
+</html>

@@ -20,7 +20,7 @@
 
     .wrapper {
       width: 100%;
-      max-width: 400px;
+      max-width: 420px;
       display: flex;
       flex-direction: column;
       gap: 1.2rem;
@@ -80,6 +80,7 @@
     button:hover { opacity: 0.85; }
     button.danger  { background: #b91c1c; }
     button.success { background: #15803d; }
+    button.active-mode { outline: 2px solid #f0f6fc; outline-offset: 2px; }
 
     .msg {
       margin-top: 0.8rem;
@@ -106,10 +107,69 @@
     .badge.protected  { background: #15803d; color: #dcfce7; }
     .badge.vulnerable { background: #b91c1c; color: #fee2e2; }
     .badge.unset      { background: #374151; color: #d1d5db; }
+
+    /* ── Proteções ── */
+    .protections-panel {
+      display: none;
+      margin-top: 1.2rem;
+      border-top: 1px solid #30363d;
+      padding-top: 1.2rem;
+    }
+
+    .protections-panel.show { display: block; }
+
+    .protections-panel h3 {
+      font-size: 0.82rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.9rem;
+    }
+
+    .protection-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .protection-item input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      margin-top: 2px;
+      cursor: pointer;
+      accent-color: #388bfd;
+      flex-shrink: 0;
+    }
+
+    .protection-item .prot-info .prot-name {
+      font-size: 0.9rem;
+      color: #e6edf3;
+      font-weight: 600;
+    }
+
+    .protection-item .prot-info .prot-desc {
+      font-size: 0.78rem;
+      color: #8b949e;
+      margin-top: 0.1rem;
+    }
+
+    .apply-btn {
+      width: 100%;
+      margin-top: 0.4rem;
+      background: #238636;
+    }
   </style>
 </head>
 <body>
   <div class="wrapper">
+
+    <!-- ── Link para o dashboard ──────────────────────────────────── -->
+    <div class="card" style="text-align:center">
+      <a href="/dashboard.html" target="_blank">
+        <button style="width:100%">Acessar Dashboard do Servidor</button>
+      </a>
+    </div>
 
     <!-- ── Configurar senha ──────────────────────────────────────── -->
     <div class="card">
@@ -130,14 +190,46 @@
         <span id="mode-badge" class="badge">…</span>
       </h2>
       <p class="subtitle">
-        <strong>Vulnerável:</strong> sem proteção.<br>
-        <strong>Protegido:</strong> bloqueia 15 s após 5 tentativas falhas.
+        <strong>Vulnerável:</strong> sem proteção alguma — plaintext, sem bloqueios.<br>
+        <strong>Protegido:</strong> aplica as proteções selecionadas abaixo.
       </p>
       <div class="row">
-        <button class="danger"  onclick="setMode('vulnerable')">Vulnerável</button>
-        <button class="success" onclick="setMode('protected')">Protegido</button>
+        <button id="btn-vulnerable" class="danger"  onclick="setMode('vulnerable')">Vulnerável</button>
+        <button id="btn-protected"  class="success" onclick="setMode('protected')">Protegido</button>
       </div>
       <div id="mode-msg" class="msg"></div>
+
+      <!-- ── Painel de proteções (só aparece no modo protegido) ── -->
+      <div id="protections-panel" class="protections-panel">
+        <h3>Proteções ativas</h3>
+
+        <div class="protection-item">
+          <input type="checkbox" id="prot-bcrypt" checked />
+          <div class="prot-info">
+            <div class="prot-name">Hash bcrypt</div>
+            <div class="prot-desc">Senha armazenada com hash — cada verificação leva ~100ms, reduz de milhares para ~10 t/s</div>
+          </div>
+        </div>
+
+        <div class="protection-item">
+          <input type="checkbox" id="prot-ip" checked />
+          <div class="prot-info">
+            <div class="prot-name">Bloqueio por IP</div>
+            <div class="prot-desc">Bloqueia o IP após cada falha com exponential backoff (1s → 2s → 4s… até 5min)</div>
+          </div>
+        </div>
+
+        <div class="protection-item">
+          <input type="checkbox" id="prot-username" checked />
+          <div class="prot-info">
+            <div class="prot-name">Bloqueio por username</div>
+            <div class="prot-desc">Bloqueia o usuário após cada falha — eficaz mesmo contra ataques distribuídos com IPs diferentes</div>
+          </div>
+        </div>
+
+        <button class="apply-btn" onclick="applyProtections()">Aplicar proteções</button>
+        <div id="prot-msg" class="msg"></div>
+      </div>
     </div>
 
   </div>
@@ -161,6 +253,21 @@
         const modeBadge = document.getElementById("mode-badge");
         modeBadge.textContent = data.mode === "protected" ? "protegido" : "vulnerável";
         modeBadge.className   = `badge ${data.mode}`;
+
+        // Painel de proteções só aparece no modo protegido
+        const panel = document.getElementById("protections-panel");
+        panel.classList.toggle("show", data.mode === "protected");
+
+        // Destaca o botão do modo ativo
+        document.getElementById("btn-vulnerable").classList.toggle("active-mode", data.mode === "vulnerable");
+        document.getElementById("btn-protected").classList.toggle("active-mode",  data.mode === "protected");
+
+        // Sincroniza checkboxes com o estado do servidor
+        if (data.protections) {
+          document.getElementById("prot-bcrypt").checked   = data.protections.bcrypt;
+          document.getElementById("prot-ip").checked       = data.protections.ipBlocking;
+          document.getElementById("prot-username").checked = data.protections.usernameBlocking;
+        }
       } catch { /* servidor offline */ }
     }
 
@@ -195,6 +302,24 @@
         showMsg("mode-msg", label, data.success ? "info" : "fail");
         if (data.success) refreshStatus();
       } catch { showMsg("mode-msg", "Erro ao conectar com o servidor.", "fail"); }
+    }
+
+    async function applyProtections() {
+      const payload = {
+        bcrypt:           document.getElementById("prot-bcrypt").checked,
+        ipBlocking:       document.getElementById("prot-ip").checked,
+        usernameBlocking: document.getElementById("prot-username").checked,
+      };
+
+      try {
+        const res  = await fetch("/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        showMsg("prot-msg", "Proteções aplicadas com sucesso.", data.success ? "ok" : "fail");
+      } catch { showMsg("prot-msg", "Erro ao conectar com o servidor.", "fail"); }
     }
 
     document.getElementById("setup-pass").addEventListener("keydown", (e) => {

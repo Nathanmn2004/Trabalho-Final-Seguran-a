@@ -8,26 +8,66 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = 3000;
 
-// Atraso base e atraso máximo (5 minutos) para o modo protegido
 const BASE_DELAY_MS = 1000;
 const MAX_DELAY_MS  = 5 * 60 * 1000;
 
+// ─────────────────────────────────────────────
+// MODO E PROTEÇÕES CONFIGURÁVEIS
+// ─────────────────────────────────────────────
 let mode = "protected";
 
-// Variável para habilitar ou desabilitar o uso do Hash Bcrypt
-const USE_HASHING = true;
+// Proteções individuais — só aplicadas no modo protegido
+const protections = {
+  bcrypt:           true,  // hash bcrypt na comparação de senha
+  ipBlocking:       true,  // bloqueio por IP com exponential backoff
+  usernameBlocking: true,  // bloqueio por username com exponential backoff
+};
 
+// Sempre armazenamos os dois formatos para permitir troca dinâmica
 let adminPasswordHash  = null;
 let adminPasswordPlain = null;
 
 // ─────────────────────────────────────────────
 // ARMAZENAMENTO DE TENTATIVAS
-// Duas tabelas separadas: uma por username, outra por IP
 // ─────────────────────────────────────────────
-const attemptsByUser = {}; // { "admin": { failedCount, blockedUntil } }
-const attemptsByIp   = {}; // { "172.20.0.21": { failedCount, blockedUntil } }
+const attemptsByUser = {};
+const attemptsByIp   = {};
 
-// Retorna os dados de tentativa de um username ou cria se não existir
+// ─────────────────────────────────────────────
+// MÉTRICAS EM TEMPO REAL
+// ─────────────────────────────────────────────
+const metrics = {
+  totalAttempts:    0,
+  blockedAttempts:  0,
+  successfulLogins: 0,
+  timestamps:       [],
+  startedAt:        null,
+  foundAt:          null,
+};
+const snapshots = [];
+
+function recordRequest() {
+  const now = Date.now();
+  if (!metrics.startedAt) metrics.startedAt = now;
+  metrics.timestamps.push(now);
+  const cutoff = now - 61000;
+  while (metrics.timestamps.length && metrics.timestamps[0] < cutoff) {
+    metrics.timestamps.shift();
+  }
+}
+
+function resetMetrics() {
+  metrics.totalAttempts    = 0;
+  metrics.blockedAttempts  = 0;
+  metrics.successfulLogins = 0;
+  metrics.timestamps       = [];
+  metrics.startedAt        = null;
+  metrics.foundAt          = null;
+}
+
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
 function getUserAttempt(username) {
   if (!attemptsByUser[username]) {
     attemptsByUser[username] = { failedCount: 0, blockedUntil: null };
@@ -35,7 +75,6 @@ function getUserAttempt(username) {
   return attemptsByUser[username];
 }
 
-// Retorna os dados de tentativa de um IP ou cria se não existir
 function getIpAttempt(ip) {
   if (!attemptsByIp[ip]) {
     attemptsByIp[ip] = { failedCount: 0, blockedUntil: null };
@@ -43,22 +82,18 @@ function getIpAttempt(ip) {
   return attemptsByIp[ip];
 }
 
-// Verifica se uma entrada (user ou IP) está bloqueada
 function isBlocked(entry) {
   return !!entry.blockedUntil && Date.now() < entry.blockedUntil;
 }
 
-// Calcula quanto tempo falta para o desbloqueio
 function getRemainingBlockMs(entry) {
   return entry.blockedUntil ? Math.max(0, entry.blockedUntil - Date.now()) : 0;
 }
 
-// Calcula o delay do exponential backoff baseado no número de falhas
 function calcDelay(failedCount) {
   return Math.min(BASE_DELAY_MS * Math.pow(2, failedCount - 1), MAX_DELAY_MS);
 }
 
-// Extrai o IP real do cliente, considerando proxies
 function getClientIp(req) {
   return (
     req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
@@ -67,7 +102,6 @@ function getClientIp(req) {
   );
 }
 
-// Limpa todas as tentativas (username e IP)
 function clearAllAttempts() {
   Object.keys(attemptsByUser).forEach(k => delete attemptsByUser[k]);
   Object.keys(attemptsByIp).forEach(k => delete attemptsByIp[k]);
@@ -77,15 +111,35 @@ function clearAllAttempts() {
 // ROTAS
 // ─────────────────────────────────────────────
 
-// Página principal
 app.get("/", (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // Status do servidor
 app.get("/status", (_req, res) => {
-  const isSet = USE_HASHING ? adminPasswordHash !== null : adminPasswordPlain !== null;
-  res.json({ passwordSet: isSet, mode });
+  res.json({
+    passwordSet: adminPasswordPlain !== null,
+    mode,
+    protections: { ...protections },
+  });
+});
+
+// Configuração de proteções
+app.get("/config", (_req, res) => {
+  res.json({ mode, protections: { ...protections } });
+});
+
+app.post("/config", (req, res) => {
+  const { bcrypt: bc, ipBlocking, usernameBlocking } = req.body;
+
+  if (typeof bc           === "boolean") protections.bcrypt           = bc;
+  if (typeof ipBlocking   === "boolean") protections.ipBlocking       = ipBlocking;
+  if (typeof usernameBlocking === "boolean") protections.usernameBlocking = usernameBlocking;
+
+  clearAllAttempts();
+
+  console.log(`[CONFIG] Proteções atualizadas:`, protections);
+  res.json({ success: true, protections: { ...protections } });
 });
 
 // Definir senha do admin
@@ -97,17 +151,13 @@ app.post("/setup", async (req, res) => {
   }
 
   try {
-    if (USE_HASHING) {
-      adminPasswordHash = await bcrypt.hash(password, 10);
-      console.log(`[SETUP] Senha definida — hash bcrypt gerado.`);
-    } else {
-      adminPasswordPlain = password;
-      console.log(`[SETUP] Senha definida em texto plano — ${password.length} caractere(s).`);
-    }
+    // Sempre armazena os dois formatos
+    adminPasswordPlain = password;
+    adminPasswordHash  = await bcrypt.hash(password, 10);
 
-    // Limpa todo o histórico de tentativas quando a senha muda
     clearAllAttempts();
 
+    console.log(`[SETUP] Senha definida — ${password.length} caractere(s), hash bcrypt gerado.`);
     return res.json({ success: true, message: "Senha definida." });
   } catch (error) {
     console.error("[SETUP] Erro:", error);
@@ -115,7 +165,7 @@ app.post("/setup", async (req, res) => {
   }
 });
 
-// Alterar o modo do sistema (vulnerable ou protected)
+// Alterar modo
 app.post("/mode", (req, res) => {
   const { newMode } = req.body;
 
@@ -124,12 +174,9 @@ app.post("/mode", (req, res) => {
   }
 
   mode = newMode;
-
-  // Limpa tentativas ao trocar de modo
   clearAllAttempts();
 
   console.log(`[MODE] Modo alterado para: ${mode}`);
-
   res.json({ success: true, mode });
 });
 
@@ -140,56 +187,56 @@ app.post("/login", async (req, res) => {
   const { username, password } = req.body;
   const clientIp = getClientIp(req);
 
-  // Valida os dados enviados
+  metrics.totalAttempts++;
+  recordRequest();
+
   if (typeof username !== "string" || typeof password !== "string") {
-    return res.status(400).json({
-      success: false,
-      message: "Envie username e password como texto."
-    });
+    return res.status(400).json({ success: false, message: "Envie username e password como texto." });
   }
 
-  // Verifica se a senha do admin já foi configurada
-  const isSet = USE_HASHING ? adminPasswordHash !== null : adminPasswordPlain !== null;
-  if (!isSet) {
-    return res.status(503).json({
-      success: false,
-      message: "Senha do admin ainda não foi configurada."
-    });
+  if (adminPasswordPlain === null) {
+    return res.status(503).json({ success: false, message: "Senha do admin ainda não foi configurada." });
   }
 
-  // ── MODO PROTEGIDO: verifica bloqueios ──
+  // ── MODO PROTEGIDO: verifica bloqueios ativos ──
   if (mode === "protected") {
-    const ua = getUserAttempt(username);
-    const ia = getIpAttempt(clientIp);
-
-    // Verifica bloqueio por IP primeiro
-    if (isBlocked(ia)) {
-      console.log(`[LOGIN] IP bloqueado: ${clientIp}`);
-      return res.status(429).json({
-        success: false,
-        blockedBy: "ip",
-        message: `IP ${clientIp} temporariamente bloqueado.`,
-        remainingBlockMs: getRemainingBlockMs(ia)
-      });
+    if (protections.ipBlocking) {
+      const ia = getIpAttempt(clientIp);
+      if (isBlocked(ia)) {
+        metrics.blockedAttempts++;
+        console.log(`[LOGIN] IP bloqueado: ${clientIp}`);
+        return res.status(429).json({
+          success: false,
+          blockedBy: "ip",
+          message: `IP ${clientIp} temporariamente bloqueado.`,
+          remainingBlockMs: getRemainingBlockMs(ia)
+        });
+      }
     }
 
-    // Verifica bloqueio por username
-    if (isBlocked(ua)) {
-      console.log(`[LOGIN] Username bloqueado: ${username}`);
-      return res.status(429).json({
-        success: false,
-        blockedBy: "username",
-        message: `Usuário "${username}" temporariamente bloqueado.`,
-        remainingBlockMs: getRemainingBlockMs(ua)
-      });
+    if (protections.usernameBlocking) {
+      const ua = getUserAttempt(username);
+      if (isBlocked(ua)) {
+        metrics.blockedAttempts++;
+        console.log(`[LOGIN] Username bloqueado: ${username}`);
+        return res.status(429).json({
+          success: false,
+          blockedBy: "username",
+          message: `Usuário "${username}" temporariamente bloqueado.`,
+          remainingBlockMs: getRemainingBlockMs(ua)
+        });
+      }
     }
   }
 
   // ── VALIDA A SENHA ──
+  // Modo vulnerável: sempre plaintext (rápido, sem restrição)
+  // Modo protegido: usa bcrypt se ativado, senão plaintext
   let valid = false;
   try {
     if (username === "admin") {
-      valid = USE_HASHING
+      const useBcrypt = mode === "protected" && protections.bcrypt;
+      valid = useBcrypt
         ? await bcrypt.compare(password, adminPasswordHash)
         : password === adminPasswordPlain;
     }
@@ -200,98 +247,158 @@ app.post("/login", async (req, res) => {
 
   // ── SENHA ERRADA ──
   if (!valid) {
-    if (mode === "protected") {
-      const ua = getUserAttempt(username);
-      const ia = getIpAttempt(clientIp);
+    // Modo vulnerável: resposta imediata sem qualquer restrição
+    if (mode === "vulnerable") {
+      return res.status(401).json({ success: false, message: "Usuário ou senha inválidos." });
+    }
 
-      // Incrementa falhas e aplica exponential backoff em ambos
+    // Modo protegido: aplica bloqueios conforme proteções ativas
+    const ua = getUserAttempt(username);
+    const ia = getIpAttempt(clientIp);
+
+    let remainingBlockMs = 0;
+
+    if (protections.usernameBlocking) {
       ua.failedCount++;
-      ia.failedCount++;
-
       const userDelay = calcDelay(ua.failedCount);
-      const ipDelay   = calcDelay(ia.failedCount);
-
       ua.blockedUntil = Date.now() + userDelay;
+      remainingBlockMs = Math.max(remainingBlockMs, getRemainingBlockMs(ua));
+      console.log(`[LOGIN] Falha — user: "${username}" (${ua.failedCount}x, bloqueado ${userDelay / 1000}s)`);
+    }
+
+    if (protections.ipBlocking) {
+      ia.failedCount++;
+      const ipDelay = calcDelay(ia.failedCount);
       ia.blockedUntil = Date.now() + ipDelay;
+      remainingBlockMs = Math.max(remainingBlockMs, getRemainingBlockMs(ia));
+      console.log(`[LOGIN] Falha — IP: ${clientIp} (${ia.failedCount}x, bloqueado ${calcDelay(ia.failedCount) / 1000}s)`);
+    }
 
-      console.log(
-        `[LOGIN] Falha — user: "${username}" (${ua.failedCount}x, bloqueado ${userDelay / 1000}s)` +
-        ` | IP: ${clientIp} (${ia.failedCount}x, bloqueado ${ipDelay / 1000}s)`
-      );
-
-      // Retorna o maior dos dois tempos de bloqueio para o cliente esperar
-      const remainingBlockMs = Math.max(
-        getRemainingBlockMs(ua),
-        getRemainingBlockMs(ia)
-      );
-
+    // Se algum bloqueio foi aplicado, retorna 429
+    if (remainingBlockMs > 0) {
+      metrics.blockedAttempts++;
       return res.status(429).json({
         success: false,
         message: `Senha inválida. Bloqueado por ${Math.ceil(remainingBlockMs / 1000)}s.`,
         blockedBy: "both",
-        userFailedCount: ua.failedCount,
-        ipFailedCount:   ia.failedCount,
         remainingBlockMs
       });
     }
 
-    // Modo vulnerável — só retorna 401 sem bloquear
-    const ua = getUserAttempt(username);
-    ua.failedCount++;
-
-    return res.status(401).json({
-      success: false,
-      message: "Usuário ou senha inválidos.",
-      failedCount: ua.failedCount
-    });
+    // Protegido mas sem bloqueios ativos (ex: só bcrypt ativo)
+    return res.status(401).json({ success: false, message: "Usuário ou senha inválidos." });
   }
 
   // ── LOGIN BEM-SUCEDIDO ──
   const ua = getUserAttempt(username);
   const ia = getIpAttempt(clientIp);
+  ua.failedCount = 0; ua.blockedUntil = null;
+  ia.failedCount = 0; ia.blockedUntil = null;
 
-  ua.failedCount  = 0;
-  ua.blockedUntil = null;
-  ia.failedCount  = 0;
-  ia.blockedUntil = null;
-
+  metrics.successfulLogins++;
+  if (!metrics.foundAt) metrics.foundAt = Date.now();
   console.log(`[LOGIN] Sucesso — user: "${username}" | IP: ${clientIp}`);
 
   return res.json({ success: true, message: "Login realizado com sucesso!" });
 });
 
 // ─────────────────────────────────────────────
-// ROTA DE DEBUG — lista todos os bloqueios ativos
-// Útil para acompanhar o ataque em tempo real
+// ROTA DE DEBUG — bloqueios ativos
 // ─────────────────────────────────────────────
 app.get("/blocks", (_req, res) => {
-  const now = Date.now();
-
   const users = Object.entries(attemptsByUser)
     .filter(([, v]) => isBlocked(v))
     .map(([k, v]) => ({
-      username:         k,
-      failedCount:      v.failedCount,
-      remainingMs:      getRemainingBlockMs(v),
+      username: k, failedCount: v.failedCount,
+      remainingMs: getRemainingBlockMs(v),
       remainingSeconds: Math.ceil(getRemainingBlockMs(v) / 1000)
     }));
 
   const ips = Object.entries(attemptsByIp)
     .filter(([, v]) => isBlocked(v))
     .map(([k, v]) => ({
-      ip:               k,
-      failedCount:      v.failedCount,
-      remainingMs:      getRemainingBlockMs(v),
+      ip: k, failedCount: v.failedCount,
+      remainingMs: getRemainingBlockMs(v),
       remainingSeconds: Math.ceil(getRemainingBlockMs(v) / 1000)
     }));
 
+  res.json({ mode, protections, blockedUsers: users, blockedIps: ips, totalBlocked: users.length + ips.length });
+});
+
+// ─────────────────────────────────────────────
+// ENDPOINTS DE MÉTRICAS / DASHBOARD
+// ─────────────────────────────────────────────
+
+app.get("/metrics", (_req, res) => {
+  const now = Date.now();
+
+  const buckets = {};
+  for (let i = 59; i >= 0; i--) {
+    const key = Math.floor((now - i * 1000) / 1000);
+    buckets[key] = 0;
+  }
+  metrics.timestamps.forEach(t => {
+    const key = Math.floor(t / 1000);
+    if (key in buckets) buckets[key]++;
+  });
+
+  const history    = Object.values(buckets);
+  const currentTps = buckets[Math.floor(now / 1000)] || 0;
+
+  const activeUsers = Object.entries(attemptsByUser)
+    .filter(([, v]) => isBlocked(v))
+    .map(([k, v]) => ({ username: k, remainingSeconds: Math.ceil(getRemainingBlockMs(v) / 1000) }));
+
+  const activeIps = Object.entries(attemptsByIp)
+    .filter(([, v]) => isBlocked(v))
+    .map(([k, v]) => ({ ip: k, remainingSeconds: Math.ceil(getRemainingBlockMs(v) / 1000) }));
+
+  const elapsedMs = metrics.startedAt ? (metrics.foundAt || now) - metrics.startedAt : 0;
+  const finished  = !!metrics.foundAt;
+
   res.json({
-    mode,
-    blockedUsers: users,
-    blockedIps:   ips,
-    totalBlocked: users.length + ips.length
+    totalAttempts: metrics.totalAttempts, blockedAttempts: metrics.blockedAttempts,
+    successfulLogins: metrics.successfulLogins, currentTps, history, mode,
+    protections: { ...protections },
+    activeBlocks: { users: activeUsers, ips: activeIps },
+    elapsedMs, finished,
   });
 });
+
+app.post("/metrics/snapshot", (req, res) => {
+  const { label } = req.body;
+  const now = Date.now();
+
+  const history = [];
+  for (let i = 59; i >= 0; i--) {
+    const key = Math.floor((now - i * 1000) / 1000);
+    history.push(metrics.timestamps.filter(t => Math.floor(t / 1000) === key).length);
+  }
+  const nonZero = history.filter(v => v > 0);
+  const avgTps  = nonZero.length
+    ? Math.round((nonZero.reduce((a, b) => a + b, 0) / nonZero.length) * 10) / 10
+    : 0;
+
+  const elapsedMs = metrics.startedAt ? (metrics.foundAt || now) - metrics.startedAt : 0;
+
+  snapshots.push({
+    id: Date.now(),
+    label: label || `Cenário ${snapshots.length + 1}`,
+    mode,
+    protections: { ...protections },
+    totalAttempts: metrics.totalAttempts,
+    blockedAttempts: metrics.blockedAttempts,
+    successfulLogins: metrics.successfulLogins,
+    avgTps, elapsedMs,
+    savedAt: new Date().toLocaleTimeString("pt-BR"),
+  });
+
+  res.json({ success: true, snapshot: snapshots[snapshots.length - 1] });
+});
+
+app.get("/metrics/snapshots", (_req, res) => { res.json(snapshots); });
+app.post("/metrics/reset",    (_req, res) => { resetMetrics(); res.json({ success: true }); });
+app.delete("/metrics/snapshots", (_req, res) => { snapshots.length = 0; res.json({ success: true }); });
 
 // Inicia o servidor
 app.listen(PORT, () => {
