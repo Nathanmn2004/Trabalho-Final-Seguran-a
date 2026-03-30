@@ -151,6 +151,54 @@ node attack.js
 
 ---
 
+## Executando o Ataque pela Internet com Ngrok
+
+É possível expor o servidor localmente para a internet usando o **ngrok**, permitindo que o atacante rode o script de outra máquina ou rede.
+
+### 1. Instalar o ngrok
+
+```bash
+brew install ngrok
+```
+
+### 2. Criar conta e autenticar
+
+Crie uma conta gratuita em [ngrok.com](https://ngrok.com) e autentique:
+
+```bash
+ngrok config add-authtoken SEU_TOKEN_AQUI
+```
+
+### 3. Subir o servidor normalmente
+
+```bash
+npm start
+```
+
+### 4. Abrir o túnel (em outro terminal)
+
+```bash
+ngrok http 3000
+```
+
+O ngrok exibirá uma URL pública, por exemplo:
+
+```
+Forwarding  https://abc123.ngrok-free.app -> http://localhost:3000
+```
+
+### 5. Enviar a URL para o atacante
+
+Copie a URL gerada e envie para a outra máquina (via WhatsApp, Discord, etc.). Na máquina atacante, basta ter Node.js instalado e rodar:
+
+```bash
+SERVER_URL=https://abc123.ngrok-free.app/login node attack.js
+```
+
+> **Observação:** No plano gratuito do ngrok, a URL muda a cada vez que o túnel é reiniciado. Basta repassar a nova URL ao atacante. Se desejar uma URL fixa, o ngrok oferece um domínio estático gratuito configurável no dashboard.
+
+---
+
 ## Aviso
 
 Este projeto foi desenvolvido **exclusivamente para fins educacionais**, com o objetivo de demonstrar conceitos de **segurança em sistemas de autenticação**. O uso de técnicas de força bruta em sistemas reais sem autorização é **ilegal e antiético**.

